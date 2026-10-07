@@ -1,90 +1,53 @@
 # TODO — Tempotec V3 Analog (мод прошивки)
 
-Обновлено: 2026-10-07.
+Обновлено: 2026-10-07 (вечер).
 
-## Текущее состояние
+## Рабочее состояние (known-good)
 
-**Последний релиз:** `out/v3_analog_artist_stock.upt`
-- ISO md5 `d8b8c4e4b9034acdd91a4bfd4bfdd5aa`, SYSTEM.UBI md5 `5bf92ec1c52044d685874475e88cfb9e`
-- бинарь md5 `edcb682f29fc38e69b7f804838ff16dd`
-- состав: всё из v1–v6 + Artists = тег `artist` (слот 125 → `ARTIST2_TABLE`; фильтр альбомов, слот 182 → стоковый `artist`) + постоянный фикс сортировки «All» (`tools/exp_all_sort.py`).
-- **на устройстве залит этот бинарь**, проверен пользователем.
+**Бинарь `b14c5e62…`** — залит на устройство, проверен пользователем.
+Состав: `4429784b` (база) + `patch_player --album-level` + `patch_sql` +
+`exp_album_view` + `exp_flags_view21` + `exp_coverpath_combo` +
+`exp_cover_kind9col` + `exp_cover_kind9id` + `exp_shuffle_linear` +
+`exp_shuffle_guard` + `exp_artist_toggle` + `exp_all_sort` +
+**`exp_albums_by_component`** (список альбомов артиста — по составляющей `artist`)
++ **`exp_artist_tracks_component`** (оба списка треков артиста — по составляющей).
 
-**Отладочный образ:** `out/v3_analog_artist_stock_adb.upt`
-- ISO `3851f6c64d82500fc9bc0a76ff9e02b5`, UBI `1381a479c7f1168088741d81e6f659ac`
-- бинарь `edcb682f…`, `etc/init.d/S98adb_debug` `86de3452…` (гаджет `adb` без `mass_storage`).
-- На устройстве скрипт `S98adb_debug` уже поправлен: `for f in "adb";` → карта не отваливается от USB.
+Ожидаемое поведение (проверять на устройстве):
+- Artists: `Дэн Субботин` и `Green Crow` отдельными строками;
+- Artists → Дэн: альбомы **5**, треки **13**; Green Crow: **14 / 86**;
+  Дурной Вкус: **4 / 9**; пустой список не должен давать «awaiting scan»;
+- All — полоска совпадает, символы/цифры внизу; Albums/Files не задеты.
 
-**Важно про SD:** отладочный гаджет `functions=mass_storage,adb` с LUN на весь `/dev/mmcblk0`
-«забирал» карту у плеера (плеер считал, что карты нет; пропадали обложки). Лечится
-`adb`-only (см. выше). Детали — `.opencode/NOTES.md`.
+## Открытые задачи
 
-## В работе: разбор тега `artist` по `;`
+1. **Развести Artists и «Исполнитель альбома».** Сейчас оба зовут один запрос
+   (слот 182, `artist like ?`) и показывают одно и то же (у Дэна 5 в обоих).
+   Ожидаемо: Album Artist — по `album_artist` (у Дэна **2**). Черновик хука —
+   `experiments/2026-10-07/exp_album_list_context.py` (не сработал: `jal` из RX
+   кодируется с чужим верхним нибблом — надо `jalr`).
+2. **Самодостаточная БД (образ без внешних скриптов).** Идея: бинарь сам
+   выполняет SQL-фикс после скана. Черновики — `experiments/2026-10-07/`
+   (`make_db_fix_sql.py`, `exp_db_autofix.py`). Хук давал **бутлуп** — причина не
+   найдена (диагностировать офлайн: дизасм стаба, симуляция SQL).
+3. **Полоска A–Z** в «Жанры», «Исполнитель альбома» и на подуровнях — её нет.
+4. **Транслит жанров на `É`** — 5 жанров без транслита (в `tools/translit_db.py`).
+5. **Порядок DB-постпроцессинга при обнулении `/data`:**
+   `translit_db` → `reorder_db` → `translit_db` (reorder сносит триггеры) →
+   `split_artists_db` (разбор `;`).
+6. **Чистка:** `work/_clr.db` (root) — удалить при удобном случае.
 
-Цель: совместный трек (`artist` = `Noize MC;Anacondaz`) должен быть виден у **каждого**
-соавтора отдельно. `album_artist` **не** разбивать; альбомы собираются по `album_artist`
-и должны быть полными. Раздел «Исполнитель альбома» не ломать.
+## Процесс (см. AGENTS.md)
 
-Что выяснено:
-- 78 трековых артистов, из них 6 склеек `X;Y` (все по 2 составляющих).
-- `ARTIST2_TABLE` наполняет сканер: `INSERT INTO ARTIST2_TABLE(artist,id,character,cn,ctime,mtime,pinyin_charater) VALUES (?,…)`.
-- `ARTIST_TABLE` собирается из `ARTIST2_TABLE` (слот 125).
-- Список альбомов артиста: `SELECT DISTINCT album FROM MEDIA_TABLE WHERE artist like ?` (слот 182).
-- Значения в БД хранятся с хвостовым `\x00` (C-строка) — в MEDIA и в ARTIST.
-- Транслит буквы (`character`) — триггер `fix_char_ARTIST2_TABLE` (AFTER INSERT).
+- Один патч — одна итерация; после каждого — проверки и только потом следующий.
+- **До флеша:** `python3 tools/verify_build.py <bin> [--image out/x.upt] [--db <копия>]`
+  (все `--check`, целостность образа, offline-симуляция конвейера БД).
+- **Чек-лист регрессий на устройстве** — из раздела «Рабочее состояние».
+- **Откат:** `adb push` known-good бинаря + `reboot` (секунды).
+- **Грабли:** `jal`/`j` из RX-зоны уходят не туда (верхний ниббл PC) — только
+  `jalr`; апдейтер виснет на битом `.upt` (не на размере).
 
-Написаны скрипты (в репо):
-- `tools/split_artists_db.py` — создаёт `ARTIST_SPLIT_NUM` + триггер `split_ARTIST2_TABLE`
-  (AFTER INSERT, разбор по `;`), разбирает существующие склейки, пересобирает `ARTIST_TABLE`.
-- `tools/exp_albums_by_component.py` — правит слот 182: фильтр списка альбомов по
-  составляющей `(';'||replace(artist,char(0),'')||';') LIKE '%;'||replace(?,char(0),'')||';%'`.
+## Артефакты
 
-**Блокер / что чинить:**
-- Триггер с recursive CTE **зацикливается** (и в БД, и в памяти) — НЕ использовать.
-- Рабочий вариант триггера (проверен в памяти): обрабатывает **первую** `;`
-  (вторая часть вставляется, первая остаётся в строке через UPDATE). Но из-за
-  `PRAGMA recursive_triggers=OFF` (по умолчанию) вложенные `;` (3+ компонента) не
-  разбираются — для текущих данных (все по 2) этого достаточно, но зафиксировать ограничение.
-- В `split_artists_db.py` в `TRIGGER_SQL` сейчас стоит именно зацикливающийся CTE-вариант —
-  **заменить** на 2-компонентный:
-  ```sql
-  CREATE TRIGGER IF NOT EXISTS split_ARTIST2_TABLE AFTER INSERT ON ARTIST2_TABLE
-  WHEN instr(replace(NEW.artist,char(0),''),';')>0
-  BEGIN
-    INSERT OR IGNORE INTO ARTIST2_TABLE(id,artist,character,cn,ctime,mtime,pinyin_charater)
-    SELECT NEW.id,
-           substr(replace(NEW.artist,char(0),''), instr(replace(NEW.artist,char(0),''),';')+1)||char(0),
-           NEW.character, NEW.cn, NEW.ctime, NEW.mtime, NEW.pinyin_charater;
-    UPDATE ARTIST2_TABLE SET artist =
-           substr(replace(NEW.artist,char(0),''),1,instr(replace(NEW.artist,char(0),''),';')-1)||char(0)
-    WHERE rowid=NEW.rowid;
-  END
-  ```
-- Проверено на копии БД: `split_artists_db.py` (с null-осознанным разбором) даёт
-  ARTIST_TABLE 77 записей, склеек 0, дублей нет. Фильтр по составляющей матчится
-  (напр. «Дэн Субботин» → 11 альбомов).
-
-Шаги для завершения:
-1. Поправить `TRIGGER_SQL` в `split_artists_db.py` на 2-компонентный (выше), перепроверить на копии БД.
-2. Прогнать `exp_albums_by_component.py` на текущем бинаре (проверить, что влезает в `.rodata`).
-3. Собрать образ (цепочка + `exp_albums_by_component`), залить бинарь, прогнать
-   `split_artists_db.py` на живой БД (pull → скрипт → push → reboot), очистить кэш списков
-   (`tools/clear_list_cache.py`).
-4. Проверить на устройстве: у каждого соавтора — свои альбомы; Album Artists не сломан;
-   Artists/Albums/All/Files целы.
-5. Обновить `CHANGELOG.md`, `readme.md`, `.opencode/NOTES.md`, скилл.
-
-## Остальные задачи
-
-1. **Полоска A-Z в «Жанры», «Исполнитель альбома» и на подуровнях** — её там нет.
-   Нужно найти, где выставляется `view->0x10` и поле `[view->0x258][0x3b6c][0x1fc]`
-   (прямых `sw` в `+0x1fc` в коде нет — вероятно, структура копируется из `.rodata`).
-2. **Транслит жанров на `É`** — 5 жанров без транслита, падают в «#»; добавить в карту
-   `tools/translit_db.py` при следующей правке БД.
-3. **Повтор DB-постпроцессинга при обнулении `/data`:**
-   `translit_db` → `reorder_db` → `translit_db` (reorder сносит триггеры) → `album_artist_db`
-   (последний — только если снова понадобится группировка по авторам альбомов).
-4. **Чистка:** удалить `work/_clr.db` (создан root’ом из docker) — при удобном случае с sudo.
-5. **Опционально:** «следующий альбом того же автора» при `album_skip` —
-   попытка `tools/exp_albums_by_author.py` падала/перезагружала плеер (слепой хук в
-   `FUN_004eae80`); если возвращаться — реимплементация функции целиком с отладкой по шагам.
+- `experiments/2026-10-07/` — сессионные черновики (хук разведения, авто-фикс БД).
+- `tools/dedupe_rootfs.py` — хардлинки дубликатов rootfs (шаг `make.sh build`).
+- `backup/` — копии релизных образов и бинарей; `out/` — собранные образы.

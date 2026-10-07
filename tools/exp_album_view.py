@@ -8,7 +8,7 @@
 «Альбомы», который умеет показывать обложки).
 
 Использование:
-    python3 tools/exp_album_view.py <hiby_player>
+    python3 tools/exp_album_view.py <hiby_player> [--check]
 """
 
 from __future__ import annotations
@@ -22,15 +22,23 @@ NEW = bytes.fromhex("a8d2c624")  # addiu a2, a2, -0x2d58
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
+    argv = sys.argv[1:]
+    check = "--check" in argv
+    args = [a for a in argv if a != "--check"]
+    if len(args) != 1:
         raise SystemExit(__doc__)
-    path = Path(sys.argv[1])
+    path = Path(args[0])
     data = bytearray(path.read_bytes())
-    if data[OFFSET : OFFSET + 4] == NEW:
+    cur = bytes(data[OFFSET : OFFSET + 4])
+    if check:
+        state = "новый" if cur == NEW else ("сток" if cur == OLD else "иное")
+        print(f"0x4a8b84 = {cur.hex()} ({state})")
+        return 0
+    if cur == NEW:
         print("правка уже стоит")
         return 0
-    if data[OFFSET : OFFSET + 4] != OLD:
-        raise SystemExit(f"не совпала инструкция: {data[OFFSET:OFFSET+4].hex()}")
+    if cur != OLD:
+        raise SystemExit(f"не совпала инструкция: {cur.hex()}")
     data[OFFSET : OFFSET + 4] = NEW
     path.write_bytes(bytes(data))
     print(f"{path}: вид списка альбомов артиста -> vg_listview_album (0x95d2a8)")
