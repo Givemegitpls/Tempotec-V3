@@ -41,8 +41,10 @@ cmd_patch() {
 cmd_build() {
   $FW bash -c "
     set -e
+    if [ -d overlay ]; then cp -a overlay/. $TREE/; fi
     python3 tools/dedupe_rootfs.py $TREE
     chown -R 1004:1004 $TREE
+    chmod 775 $TREE/usr/bin/hiby_player
     mkfs.ubifs -x lzo -d $TREE -e 0x1F000 -c 480 -m 0x800 -o $UNPACKED/SYSTEM.UBI
     python3 tools/fix_update_md5.py $UNPACKED/UPDATE.TXT $UNPACKED/SYSTEM.UBI
     mkdir -p out

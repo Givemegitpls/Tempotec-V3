@@ -1,0 +1,108 @@
+#!/bin/sh
+#
+# Отладочный скрипт: поднимает adb (Android Debug Bridge) поверх USB-гаджета.
+# Есть только в отладочной сборке (v3_analog_artists_with_adb.upt).
+#
+# Штатный UI этой модели режим Dock/adb не показывает, поэтому гаджет
+# настраивается напрямую через sysfs — в той же последовательности, что в
+# K90adb (сначала enable=0, только потом functions и enable=1).
+#
+# Отчёт пишется в /mnt/sd_0/adb_boot.log (если карта есть) и в /tmp/adb_boot.log;
+# вывод самого adbd — в /mnt/sd_0/adbd.log (или /tmp/adbd.log).
+# Скрипт работает ~3 минуты после загрузки и замолкает, чтобы не спорить с
+# USB-режимом, который выберет пользователь.
+
+GADGET=/sys/class/android_usb/android0
+LOG1=/mnt/sd_0/adb_boot.log
+LOG2=/tmp/adb_boot.log
+
+log() {
+    echo "$(date '+%H:%M:%S') $*" >>"$LOG1" 2>/dev/null
+    echo "$*" >>"$LOG2" 2>/dev/null
+}
+
+adbd_pid() {
+    for p in /proc/[0-9]*; do
+        if [ "$(cat "$p/comm" 2>/dev/null)" = "adbd" ]; then
+            echo "${p#/proc/}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+report() {
+    log "--- $1"
+    log "gadget: $(ls /sys/class/android_usb/ 2>/dev/null | tr '\n' ' ')"
+    for f in enable state functions idVendor idProduct; do
+        log "  $f = $(cat $GADGET/$f 2>/dev/null)"
+    done
+    log "  /dev/android*: $(ls -l /dev/android* 2>/dev/null | tr '\n' ' ')"
+    log "  adbd pid: $(adbd_pid)"
+    log "  udc: $(ls /sys/class/udc/ 2>/dev/null | tr '\n' ' ')"
+    log "  $GADGET: $(ls $GADGET 2>/dev/null | tr '\n' ' ')"
+    log "  dmesg: $(dmesg 2>/dev/null | tail -12 | tr '\n' '|')"
+}
+
+try_functions() {
+    funcs="$1"
+    echo 0 >"$GADGET/enable" 2>/dev/null
+    sleep 1
+    echo 18d1 >"$GADGET/idVendor" 2>/dev/null
+    echo 0d02 >"$GADGET/idProduct" 2>/dev/null
+    echo "$funcs" >"$GADGET/functions" 2>/dev/null
+    echo 1 >"$GADGET/enable" 2>/dev/null
+    sleep 2
+    got=$(cat "$GADGET/functions" 2>/dev/null)
+    log "try '$funcs' -> functions='$got' state='$(cat $GADGET/state 2>/dev/null)'"
+    [ "$got" = "$funcs" ]
+}
+
+start_adbd() {
+    if ! adbd_pid >/dev/null; then
+        if [ -d /mnt/sd_0 ]; then
+            adbd_log=/mnt/sd_0/adbd.log
+        else
+            adbd_log=/tmp/adbd.log
+        fi
+        /sbin/adbd >>"$adbd_log" 2>&1 &
+        sleep 1
+        log "adbd запущен, pid $(adbd_pid), лог $adbd_log"
+    fi
+}
+
+case "$1" in
+    start)
+        (
+            report "boot"
+            i=0
+            ok=""
+            while [ $i -lt 10 ]; do
+                sleep 15
+                if [ ! -f /mnt/sd_0/enable_adb ]; then
+                    i=$((i + 1))
+                    continue
+                fi
+                for f in "adb"; do
+                    if try_functions "$f"; then
+                        ok="$f"
+                        break
+                    fi
+                done
+                [ -n "$ok" ] && break
+                i=$((i + 1))
+            done
+            if [ -n "$ok" ]; then
+                start_adbd
+                report "после включения ($ok)"
+            else
+                log "маркер /mnt/sd_0/enable_adb не найден — adb не включаю, гаджет не трогаю"
+            fi
+        ) &
+        ;;
+    stop)
+        /sbin/kill_adbserver.sh >/dev/null 2>&1 &
+        ;;
+esac
+
+exit 0
