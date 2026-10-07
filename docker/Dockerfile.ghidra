@@ -1,0 +1,29 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-21-jdk-headless \
+        python3 \
+        python3-pip \
+        curl \
+        unzip \
+        ca-certificates \
+        file \
+    && pip3 install --break-system-packages --no-cache-dir pyghidra \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Ghidra (headless-анализатор + декомпилятор)
+ARG GHIDRA_URL=https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+RUN curl -sL "$GHIDRA_URL" -o /tmp/ghidra.zip \
+    && unzip -q /tmp/ghidra.zip -d /opt \
+    && rm /tmp/ghidra.zip \
+    && mv /opt/ghidra_* /opt/ghidra
+
+ENV GHIDRA_HOME=/opt/ghidra
+ENV PATH="$GHIDRA_HOME/support:$PATH"
+
+# наши скрипты (список функций, декомпиляция по адресу)
+COPY ghidra_scripts /opt/ghidra/Ghidra/Features/Base/ghidra_scripts/
+
+WORKDIR /work

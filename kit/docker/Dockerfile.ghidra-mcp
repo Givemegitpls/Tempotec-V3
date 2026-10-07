@@ -1,0 +1,36 @@
+# ЭКСПЕРИМЕНТАЛЬНЫЙ образ: Ghidra + ghidra-mcp (headless server).
+# Шаги/имена артефактов зависят от версии ghidra-mcp — если сборка не прошла,
+# используй установку на хосте (см. ghidra-mcp.md) или сверься с README проекта.
+#
+# Сборка (из корня kit/):
+#   docker build -t hiby-ghidra-mcp -f docker/Dockerfile.ghidra-mcp docker
+# Запуск (проект монтируется в /work, HTTP только на loopback):
+#   docker run --rm -p 127.0.0.1:8089:8089 -v "$PWD:/work" -w /work hiby-ghidra-mcp
+
+FROM hiby-ghidra
+
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        maven git curl ca-certificates python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv (нужен мосту bridge-mcp-ghidra и tools.setup)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -sf /root/.local/bin/uv /usr/local/bin/uv
+
+ARG GHIDRA_MCP_REF=main
+RUN git clone --depth 1 --branch "${GHIDRA_MCP_REF}" \
+        https://github.com/bethington/ghidra-mcp /opt/ghidra-mcp
+
+WORKDIR /opt/ghidra-mcp
+# ставим зависимости Ghidra в локальный maven и собираем
+RUN python3 -m tools.setup ensure-prereqs --ghidra-path /opt/ghidra || true
+RUN python3 -m tools.setup build
+# headless-сервер: находим собранный jar и даём стабильное имя
+RUN set -e; JAR=$(find /opt/ghidra-mcp -maxdepth 4 -iname '*Headless*.jar' | head -1); \
+    test -n "$JAR"; ln -sf "$JAR" /opt/ghidra-mcp/GhidraMCPHeadless.jar
+
+EXPOSE 8089
+WORKDIR /work
+ENTRYPOINT ["java", "-jar", "/opt/ghidra-mcp/GhidraMCPHeadless.jar", "--bind", "0.0.0.0", "--port", "8089"]
