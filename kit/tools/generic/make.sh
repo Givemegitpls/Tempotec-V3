@@ -1,29 +1,22 @@
 #!/usr/bin/env bash
-# Сборка/разборка прошивки HiBy OS. Шаблон: запускать ИЗ КОРНЯ ПРОЕКТА.
-# Все инструменты — в docker-образе (см. kit/docker/README.md).
+# Сборка/разборка прошивки Tempotec V3 Analog. Всё внутри docker-образа
+# tempotec-fw-tools (см. docker/Dockerfile), в систему ничего не ставится.
 #
-#   ./kit/tools/generic/make.sh unpack
-#   ./kit/tools/generic/make.sh patch        # patch_player + patch_sql (если есть)
-#   ./kit/tools/generic/make.sh build [имя]
-#   ./kit/tools/generic/make.sh verify [имя]
+#   ./tools/make.sh unpack   # v3_analog.upt.txt -> fw/unpacked + fw/SYSTEM
+#   ./tools/make.sh patch    # правки бинарей в fw/SYSTEM
+#   ./tools/make.sh build    # fw/SYSTEM -> SYSTEM.UBI -> md5 -> out/*.upt
+#   ./tools/make.sh verify   # распаковать собранный образ и сверить с fw/SYSTEM
+#   ./tools/make.sh all      # unpack + patch + build + verify
 #
-# Переопределяется через env:
-#   FW=kit/docker/fw.sh  FW_IMAGE=hiby-fw-tools
-#   SRC=stock.upt  TREE=fw/SYSTEM  UNPACKED=fw/unpacked
-#   FIXMD5=kit/tools/generic/fix_update_md5.py
-#   PATCH_PLAYER=tools/patch_player.py  PATCH_SQL=tools/patch_sql.py
+# Готовый образ: out/v3_analog_patched.upt
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
-FW=${FW:-kit/docker/fw.sh}
-FW_IMAGE=${FW_IMAGE:-hiby-fw-tools}
-export FW_IMAGE
-SRC=${SRC:-stock.upt}
-UNPACKED=${UNPACKED:-fw/unpacked}
-TREE=${TREE:-fw/SYSTEM}
+FW=docker/fw.sh
+SRC=v3_analog.upt.txt
+UNPACKED=fw/unpacked
+TREE=fw/SYSTEM
 OUT="out/${2:-v3_analog_patched.upt}"
-FIXMD5=${FIXMD5:-kit/tools/generic/fix_update_md5.py}
-PATCH_PLAYER=${PATCH_PLAYER:-tools/patch_player.py}
-PATCH_SQL=${PATCH_SQL:-tools/patch_sql.py}
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 
@@ -41,17 +34,19 @@ cmd_unpack() {
 }
 
 cmd_patch() {
-  [ -f "$PATCH_PLAYER" ] && $FW python3 "$PATCH_PLAYER" "$@" $TREE/usr/bin/hiby_player
-  [ -f "$PATCH_SQL" ] && $FW python3 "$PATCH_SQL" $TREE/usr/bin/hiby_player
-  true
+  $FW python3 tools/patch_player.py "$@" $TREE/usr/bin/hiby_player
+  $FW python3 tools/patch_sql.py $TREE/usr/bin/hiby_player
 }
 
 cmd_build() {
   $FW bash -c "
     set -e
+    if [ -d overlay ]; then cp -a overlay/. $TREE/; fi
+    python3 tools/dedupe_rootfs.py $TREE
     chown -R 1004:1004 $TREE
+    chmod 775 $TREE/usr/bin/hiby_player
     mkfs.ubifs -x lzo -d $TREE -e 0x1F000 -c 480 -m 0x800 -o $UNPACKED/SYSTEM.UBI
-    python3 $FIXMD5 $UNPACKED/UPDATE.TXT $UNPACKED/SYSTEM.UBI
+    python3 tools/fix_update_md5.py $UNPACKED/UPDATE.TXT $UNPACKED/SYSTEM.UBI
     mkdir -p out
     genisoimage -l -o $OUT \
       $UNPACKED/SYSTEM.UBI $UNPACKED/UIMAGE.BIN $UNPACKED/UBOOT.BIN \
@@ -72,10 +67,11 @@ cmd_verify() {
     grep -A3 'rootfs=' \$V/iso/UPDATE.TXT | sed -n 's/.*md5=/UPDATE.TXT: /p'
     md5sum \$V/iso/SYSTEM.UBI | sed 's/^/файл:      /'
     ubireader_extract_files -k -o \$V/SYSTEM \$V/iso/SYSTEM.UBI
-    echo '--- различия дерева SYSTEM (ожидается пусто):'
+    echo '--- различия дерева SYSTEM после пересборки (ожидается пусто):'
     diff -r --no-dereference -q $TREE \$V/SYSTEM || true
-    echo '--- md5 бинаря в образе:'
-    md5sum \$V/SYSTEM/usr/bin/hiby_player
+    echo '--- патчи в собранном образе:'
+    python3 tools/patch_player.py --check \$V/SYSTEM/usr/bin/hiby_player
+    python3 tools/patch_sql.py --check \$V/SYSTEM/usr/bin/hiby_player
   "
 }
 
@@ -85,5 +81,5 @@ case "${1:-all}" in
   build)  cmd_build ;;
   verify) cmd_verify ;;
   all)    cmd_unpack; cmd_patch; cmd_build; cmd_verify ;;
-  *) echo "использование: $0 {unpack|patch|build|verify|all} [имя образа]" >&2; exit 1 ;;
+  *)      echo "использование: $0 {unpack|patch|build|verify|all} [имя образа для build/verify]" >&2; exit 1 ;;
 esac

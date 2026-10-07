@@ -56,8 +56,23 @@ ubireader_extract_files и mkfs.ubifs) и сравнивать содержим�
 ./tools/make.sh all      # всё подряд
 ```
 
+`make.sh build` перед упаковкой: копирует `overlay/` в дерево (так в сборке
+оказывается `etc/init.d/S98adb_debug` — adb по маркеру), схлопывает дубликаты
+файлов (`tools/dedupe_rootfs.py`) и выставляет права `775` на `hiby_player`
+(иначе плеер не запустится — бутлуп).
+
+Проверки ДО флеша: `python3 tools/verify_build.py <bin> [--image out/x.upt]
+[--db <копия базы>]` — права дерева, все `--check` патчей, целостность образа и
+offline-симуляция правок БД. Самодостаточная медиатека: SQL-фикс генерируется
+`tools/make_db_fix_sql.py`, выполняется бинарём (хук `tools/exp_db_autofix.py`).
+
 Готовые образы (подробно — в `CHANGELOG.md`):
-- `out/v3_analog_artist_stock.upt` — **релиз**: всё из
+- `out/v3_analog_selfdb5.upt` — **релиз**: всё из `v3_analog_artist_stock.upt`
+  плюс **самодостаточная медиатека** (после «обновления медиатеки» прошивка сама
+  расставляет буквы, разбирает совместных исполнителей по `;` и пересобирает
+  списки — без компьютера) и adb по маркеру `/mnt/sd_0/enable_adb`; ISO
+  `38e4c70f…`, UBI `18d3dff3…`;
+- `out/v3_analog_artist_stock.upt` — предыдущий релиз: всё из
   `v3_analog_artist_toggle.upt` плюс Artists по тегу `artist` (как в стоке) и
   постоянный фикс сортировки списка «All»;
 - `out/v3_analog_artist_toggle.upt` — предыдущий релиз: всё из

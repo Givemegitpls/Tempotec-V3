@@ -18,14 +18,23 @@ description: "Use when unpacking, patching, rebuilding or testing the Tempotec V
 ```
 ./tools/make.sh unpack      # v3_analog.upt.txt -> fw/unpacked (ISO) + fw/SYSTEM (UBIFS)
 ./tools/make.sh patch       # правки бинаря: tools/patch_player.py + tools/patch_sql.py
-./tools/make.sh build [имя] # chown 1004:1004 -> mkfs.ubifs -> md5 в UPDATE.TXT -> out/<имя>
+./tools/make.sh build [имя] # overlay/ -> dedupe дубликатов -> chown 1004:1004 -> chmod 775
+                            #   -> mkfs.ubifs -> md5 в UPDATE.TXT -> out/<имя>
 ./tools/make.sh verify [имя]# распаковать результат, сверить md5/дерево/состав патчей
 ./tools/make.sh all         # всё подряд
 ```
 
+Проверки ДО флеша: `python3 tools/verify_build.py <bin> [--image out/x.upt] [--db <копия>]`
+— права дерева (иначе бутлуп), все `--check` цепочки, целостность образа,
+offline-симуляция правок БД.
+
 Готовый образ — `out/<имя>` (по умолчанию `v3_analog_patched.upt`). Перед сборкой
 убедиться, что `fw/SYSTEM` распакован из нужного образа (после смены исходника —
 `unpack` заново).
+
+**Грабли сборки:** `usr/bin/hiby_player` должен быть исполняемым (`775`) — иначе
+образ соберётся, но плеер не запустится (бутлуп на заставке). `make.sh build` и
+`verify_build.py` это проверяют.
 
 ## Правки бинаря
 
@@ -49,8 +58,22 @@ description: "Use when unpacking, patching, rebuilding or testing the Tempotec V
 Семантику нового SQL-запроса проверять на копии реальной БД (обычный python3 +
 sqlite3), а не «на глаз»: пример — `tools/test_query.py`.
 
-## Правки базы медиатеки (не в прошивке)
+## Медиатека: самодостаточная правка (в прошивке)
 
+Начиная с selfdb-сборки плеер **сам** приводит БД в порядок после «обновления
+медиатеки»: `tools/exp_db_autofix.py` (хук `0x71D0B0`, «Scanner stopped»)
+выполняет `/usr/share/hiby_db_fix.sql` (генерируется `tools/make_db_fix_sql.py`)
+через `sqlite3_exec`. SQL идемпотентный: карта `CYR_MAP`, триггеры `fix_char_*` и
+`split_ARTIST2_TABLE`, одноразовый разбор склеек и пересборка списков по
+`character`. Компьютер и adb не нужны.
+
+**Точку `0x4E980C` (эпилог `FUN_004e97c0`) НЕ использовать** — это общая функция
+ожидания, вызывается и при подключении USB; наш SQL там вешает плеер. Проверенная
+точка — `0x71D0B0`.
+
+## Правки базы медиатеки офлайн (скрипты)
+
+Для офлайн-работы с копией базы (или начальной настройки) остались скрипты.
 Полоска букв в плеере — это картинка (`a_z.png`), а буква каждой записи хранится
 в колонке `character` таблиц. Прыжок по букве считает позицию по числу записей,
 поэтому **таблицы списков обязаны идти в порядке `character`**, а чтобы русские
@@ -101,12 +124,16 @@ shuffle guard `0xa7e370`, artist-toggle `0xa7e500`, kind9-шаблон `0xa7e800
 Полная релизная цепочка (из базы `4429784b`):
 `patch_player --album-level → patch_sql → exp_album_view → exp_flags_view21 →
 exp_coverpath_combo → exp_cover_kind9col → exp_cover_kind9id →
-exp_shuffle_linear → exp_shuffle_guard → exp_artist_toggle → exp_all_sort`.
-`exp_albums_by_album_artist` больше не применяется: Artists снова по тегу `artist`
-(слот 125 собирает `ARTIST_TABLE` из `ARTIST2_TABLE`), а слот 182 — стоковый
-`WHERE artist like ?`. `exp_all_sort` добавляет `ORDER BY character,name` в SQL
-списка «All» (слоты 159/305, строка `0x9c2438`), чтобы порядок не ломался после
-обновления медиатеки. Детали — `.opencode/NOTES.md`.
+exp_shuffle_linear → exp_shuffle_guard → exp_artist_toggle → exp_all_sort →
+exp_albums_by_component → exp_artist_tracks_component → exp_db_autofix`
+(+ в образ `overlay/` и `/usr/share/hiby_db_fix.sql`). `exp_albums_by_album_artist`
+больше не применяется: Artists снова по тегу `artist` (слот 125 собирает
+`ARTIST_TABLE` из `ARTIST2_TABLE`). `exp_albums_by_component`/`exp_artist_tracks_component`
+делают фильтр списков альбомов/треков артиста матчем по составляющей `artist`
+(разбор склейки `X;Y` по `;`) — формула через `substr(x,1,length(x))`, НЕ через
+`replace(...,char(0),'')` (NUL ломает LIKE). `exp_db_autofix` — самодостаточная БД.
+`exp_all_sort` добавляет `ORDER BY character,name` в SQL списка «All»
+(слоты 159/305, строка `0x9c2438`). Детали — `.opencode/NOTES.md`.
 
 ## Итерации на устройстве (быстрее, чем перепрошивка)
 
@@ -126,7 +153,15 @@ adb shell 'md5sum /usr/bin/hiby_player'                     # сверить, ч
 ## Что учитывать
 
 - **БД не входит в образ** — прошивка отвечает за поведение, а не за содержимое
-  медиатеки; при обнулении `/data` правки из предыдущего раздела надо повторить.
+  медиатеки. Но самодостаточная правка (`exp_db_autofix` + SQL-файл) чинит БД
+  сама при «обновлении медиатеки», в т.ч. после обнуления `/data`.
+- **`jal`/`j` ИЗ RX-зоны (`0xa7e370..0xa7f000`) уходят не туда** — кодируются с
+  верхним нибблом PC (`0xa…`). Любой вызов из RX-кода — только `jalr`
+  (`lui t9,hi; addiu t9,t9,lo; jalr t9`). И помни про delay-слот `jalr`.
+- **adb — только по маркеру** `/mnt/sd_0/enable_adb` (`overlay/etc/init.d/S98adb_debug`);
+  без маркера гаджет стоковый. Активный adb-гаджет ломает обычное подключение к ПК.
+- **Хук на «общей» функции вешается на все её вызовы.** Перед хуком проверь всех
+  вызывающих (пример провала — точка `0x4E980C`).
 - Правки делаются «по месту»: длина строк сохраняется (padding), либо строка
   переносится с переписыванием указателя в слоте таблицы. Новый код в `.rodata`
   не кладём — это данные, не исполняемый сегмент (за исключением мест, где это

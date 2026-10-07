@@ -34,6 +34,7 @@ kit/
   docker/          Dockerfile.tools, Dockerfile.ghidra, Dockerfile.ghidra-mcp, обёртки, ghidra-mcp
   tools/generic/   make.sh, xref.py, disasm_range.py, find_jal.py, fix_update_md5.py, ...
   tools/examples/  наши патч-скрипты (идемпотентные, --check) как образцы
+  overlay/         файлы, добавляемые в rootfs при сборке (adb по маркеру)
   reference/       NOTES-v3.md — вся история/адреса V3 Analog
 ```
 
