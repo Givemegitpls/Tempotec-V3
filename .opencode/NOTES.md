@@ -1904,3 +1904,51 @@ character,name` (точное `=`, без has_child_file). Правка 0x9ba000
   после первого `\`.
 - `FUN_004a9180` зовётся как источник (view+0x423c) с `param_1 = *(view+0x3b6c)`
   (виджет), `param_4 = view+0x70`; `FUN_0049dfe0:983-985`.
+
+## СЕССИЯ 2026-10-08 (прод.): переключатель «треки» в Album Artist (v3_analog_aa_toggle)
+
+**Готово и проверено на устройстве.** В «Исполнителе альбома» кнопка
+`sub_back_iv_list_type` показывала треки по тегу `artist` (13 у Дэна Субботина)
+вместо `album_artist` (2). Исправлено. Бинарь md5 `c77cc2703ca95f7a1deab566d65b1ad7`;
+образ `out/v3_analog_aa_toggle.upt` (ISO `7eba4824…`, UBI `7996b273…`).
+Скрипт — `tools/exp_toggle_album_artist.py` (идемпотентен, `--check`), в цепочке
+сразу после `exp_artist_toggle`.
+
+### Почему было не так
+- Кнопка общая: обработчик `FUN_004c7ba0` для активного вида `vg_listview_album`
+  строит ключ `artist_all\<имя>` и открывает `vg_listview_songs_of_artist_all`
+  (kind 5, `WHERE artist like ?`). Вид делят Artists и Album Artist; различие
+  только в префиксе ключа вида (`artist\` vs `album_artist\`).
+- Клик по альбому в Album Artist (`FUN_004a9680`, префикс `album`,
+  `vg_listview_songs_of_an_album`) — работал корректно, не трогали.
+
+### Патч (3 точки, заглушка в `.text`-пещере, НЕ в RX)
+1. `0x4c7c40`: `jal FUN_004a...` — точнее `jal 0xa7d710` (strlen, `0x0C29F5C4`)
+   → `jal 0x419328` (`0x0C1064CA`). Хук срабатывает для всех видов, до сравнений.
+2. Заглушка @`0x419328` (356 б; `$s0`=вид, `$s1`=менеджер, `$s2`=0x960000,
+   `sp+0x220`=ASCII-имя вида, `sp+0x18`=буфер ключа; sp не меняем):
+   - имя == `vg_listview_songs_of_an_album_artist` → `rev`: скопировать ключ
+     (`FUN_00420f20`), `FUN_004a0400(view)`, открыть `vg_listview_album`
+     (`FUN_004403a0`/`FUN_0043eda0`, при 0 → `FUN_0049dfe0`);
+   - имя == `vg_listview_album` И ключ `view+0x3de0` начинается с `album_artist\`
+     (3 слова «al»/«bu»/«m_») → `fwd`: то же, но вид
+     `vg_listview_songs_of_an_album_artist` (0x960948);
+   - иначе `fallback`: `strlen("vg_listview_album")` + `jr 0x4c7c48` (штатный путь).
+   - `ret1` → `jr 0x4c7d5c` (штатный эпилог `addiu v0,zero,1`).
+   - ra/s3 не сохраняем: прыжки по фиксированным адресам; s0/s1/s2 не портим.
+3. Jump-таблица сборщика панели `0x96429c`, idx `0x63` @`0x964428`:
+   `0x004c7618` → `0x004c74f0` (ветка показывает кнопку; нового кода не нужно).
+
+### Грабли/факты
+- Пещера `0x419328` — внутри LOAD R+X (файл off `0x19328`), но НЕ в именованной
+  секции (между `.rel.dyn`/`.rel.plt`), поэтому `tools/disasm_range.py` её не
+  видит («section not found») — дизасмить капстоном по файловому офсету.
+- Из `.text` (PC top nibble 0) обычный `jal` достаёт до 0x0FFFFFFC (в т.ч.
+  0xa7d840/0xa7d710 — их top nibble тоже 0). Из RX пришлось бы `jalr`.
+- `0xa7d710` = strlen, `0xa7d840` = strcmp (GOT-трамплины `lui t7,0xa9; lw t9,…`).
+- Jump-таблица панели хранит **адреса**, пишем данные (`f0 74 4c 00`).
+
+### Проверка на устройстве (ПРОЙДЕНА)
+Album Artist→`Дэн`→переключатель = 2 трека, назад = 2 альбома; Artists→
+переключатель = 13 (без изменений); Albums/Genres без изменений.
+(Прошивка через SD как `v3_analog.upt`; кэш `list_tb` чистить не нужно.)

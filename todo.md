@@ -4,10 +4,10 @@
 
 ## Рабочее состояние
 
-- **Свежая сборка:** `out/v3_analog_aa_split.upt` (ISO md5 `b4d377d2…`, UBI
-  `cb027352…`, бинарь `1029d446…`) — Artists и «Исполнитель альбома» разведены
-  (5 vs 2), всё из версий 1–8. **Проверено на устройстве 2026-10-08** (сейчас
-  залито на плеер).
+- **Свежая сборка:** `out/v3_analog_aa_toggle.upt` (ISO `7eba4824…`, UBI
+  `7996b273…`, бинарь `c77cc270…`) — Artists и «Исполнитель альбома» разведены
+  (5 vs 2) + переключатель треков в Album Artist по `album_artist`. **Проверено
+  на устройстве 2026-10-08** (залито).
 - **Эталон цепочки:** бинарь `c7de2e50…` (Версия 8 CHANGELOG, база `4429784b` +
   цепочка). `out/v3_analog_selfdb6.upt` — НЕ чистый эталон: его бинарь содержит
   остаточный провальный `by_section` (stub @0x419328, hook @0x4a92a0).
@@ -19,10 +19,10 @@
 - Цепочка: `patch_player --album-level → patch_sql → exp_album_view →
   exp_flags_view21 → exp_coverpath_combo → exp_cover_kind9col →
   exp_cover_kind9id → exp_shuffle_linear → exp_shuffle_guard →
-  exp_artist_toggle → exp_all_sort → exp_albums_artist_album_artist →
-  exp_artist_tracks_component → exp_db_autofix` (+ `overlay/`, SQL-файл).
-  (`exp_albums_by_component` заменён новым; `exp_albums_by_section` и
-  `exp_albums_album_artist` удалены как проваленные.)
+  exp_artist_toggle → exp_toggle_album_artist → exp_all_sort →
+  exp_albums_artist_album_artist → exp_artist_tracks_component → exp_db_autofix`
+  (+ `overlay/`, SQL-файл). (`exp_albums_by_component` заменён новым;
+  `exp_albums_by_section` и `exp_albums_album_artist` удалены.)
 
 ## Открытые задачи
 
@@ -35,6 +35,9 @@
 - **Разведение Artists и «Исполнитель альбома»** — Artists→`Дэн Субботин` = 5,
   «Исполнитель альбома»→`Дэн Субботин` = 2; проверено на устройстве. Детали —
   `docs/next-album-artist.md`, скрипт `tools/exp_albums_artist_album_artist.py`.
+- **Переключатель треков в «Исполнителе альбома»** — теперь 2 трека (по
+  `album_artist`), не 13; назад к альбомам; Artists не задет. Скрипт
+  `tools/exp_toggle_album_artist.py`.
 
 ## Процесс (см. AGENTS.md)
 
@@ -53,7 +56,8 @@
   `next-album-artist.md` (решение Artists/Album Artist).
 - `tools/` — патчи цепочки, `verify_build.py`, `dump_sql_slots.py`,
   `make_db_fix_sql.py`, `dedupe_rootfs.py`, `exp_albums_artist_album_artist.py`
-  (разведение Artists/Album Artist), `diag_album_keys.py` (заготовка диагностики).
+  (разведение Artists/Album Artist), `exp_toggle_album_artist.py` (переключатель
+  треков в Album Artist), `diag_album_keys.py` (заготовка диагностики).
 - `overlay/` — файлы, добавляемые в rootfs при сборке (`S98adb_debug`).
 - `experiments/2026-10-07/` — ранние черновики.
 - `backup/` — релизные образы/бинари; `out/` — собранные образы.

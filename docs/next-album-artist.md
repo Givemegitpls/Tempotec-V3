@@ -45,6 +45,24 @@
 `album_artist\Дэн Субботин`→2, `artist\Anacondaz`→16, `album`→0 (в т.ч. с
 хвостовым NUL, как биндит плеер).
 
+## Переключатель «треки» в «Исполнителе альбома» (`tools/exp_toggle_album_artist.py`)
+
+Отдельный фикс: кнопка `sub_back_iv_list_type` (обработчик `FUN_004c7ba0`) общая
+для Artists и «Исполнителя альбома», и для вида `vg_listview_album` строила ключ
+`artist_all\<имя>` → открывала `vg_listview_songs_of_artist_all` (kind 5,
+`WHERE artist like ?`). Поэтому в Album Artist переключатель показывал 13 треков
+по `artist` вместо 2 по `album_artist`.
+
+Патч (3 точки, без RX — заглушка в `.text`-пещере `0x419328`):
+1. `0x4c7c40`: `jal 0xa7d710`(`0x0C29F5C4`, strlen) → `jal 0x419328`(`0x0C1064CA`);
+2. заглушка: вид `vg_listview_songs_of_an_album_artist` → назад в
+   `vg_listview_album`; вид `vg_listview_album` + ключ начинается с
+   `album_artist\` → открыть `vg_listview_songs_of_an_album_artist` (type 0x63,
+   kind 0x21, `WHERE album_artist = ?`) с тем же ключом; иначе `fallback`
+   (воспроизвести `strlen` и вернуться в `0x4c7c48`) — Artists/жанры без изменений;
+3. jump-таблица панели `0x96429c`, idx `0x63` @`0x964428`: `0x4c7618` → `0x4c74f0`
+   (показать кнопку на трек-списке для возврата).
+
 ## Что НЕ сработало (НЕ повторять — теперь понятно почему)
 
 1. `exp_albums_by_section.py` (удалён) — патчил **не тот буфер**: `0x4a9274`
@@ -78,12 +96,14 @@
 
 ## Сборка и проверка
 
-Образ: `out/v3_analog_aa_split.upt` (ISO md5 `b4d377d22ca22a955218784361deaac6`,
-SYSTEM.UBI `cb027352f297b0e4625ac6b240ad75ae`, бинарь `1029d446b640c4f5e0b843e42076f088`).
+Образ: `out/v3_analog_aa_toggle.upt` (ISO md5 `7eba4824f28db0f91ec00e769ba3419b`,
+SYSTEM.UBI `7996b273b6b2e5709503c5289d66fa9a`, бинарь `c77cc2703ca95f7a1deab566d65b1ad7`);
+предыдущая (без переключателя) — `out/v3_analog_aa_split.upt`.
 Цепочка: `patch_player --album-level → patch_sql → exp_album_view →
 exp_flags_view21 → exp_coverpath_combo → exp_cover_kind9col → exp_cover_kind9id →
-exp_shuffle_linear → exp_shuffle_guard → exp_artist_toggle → exp_all_sort →
-exp_albums_artist_album_artist → exp_artist_tracks_component → exp_db_autofix`
+exp_shuffle_linear → exp_shuffle_guard → exp_artist_toggle →
+exp_toggle_album_artist → exp_all_sort → exp_albums_artist_album_artist →
+exp_artist_tracks_component → exp_db_autofix`
 (`exp_albums_by_component` заменён новым скриптом; `exp_albums_by_section` и
 `exp_albums_album_artist` удалены). Проверка: `python3 tools/verify_build.py <bin>
 [--image out/x.upt] [--db <копия>]` → ИТОГ: OK.
@@ -91,9 +111,12 @@ exp_albums_artist_album_artist → exp_artist_tracks_component → exp_db_autofi
 ## Проверка на устройстве (ПРОЙДЕНА 2026-10-08)
 
 1. `adb push fw/SYSTEM/usr/bin/hiby_player /usr/bin/hiby_player` → `chmod 755` →
-   `sync` → `reboot` (или прошить `out/v3_analog_aa_split.upt`).
+   `sync` → `reboot` (или прошить `out/v3_analog_aa_toggle.upt`).
 2. Artists → `Дэн Субботин` = **5** альбомов. ✓
 3. Исполнитель альбома → `Дэн Субботин` = **2** альбома. ✓
-4. Albums / All / Files целы; соавтор (`Anacondaz` и т.п.) виден в Artists. ✓
-5. Перед тестом очищен кэш списков (`tools/clear_list_cache.py`), иначе старый
-   `list_tb` под ключом `album_artist\Дэн` показывал бы 5.
+4. Переключатель в «Исполнителе альбома» → **2 трека** (по `album_artist`); ещё
+   раз → назад к 2 альбомам. ✓
+5. Artists → переключатель → **13 треков** (не сломано). ✓
+6. Albums / Genres — без изменений. ✓
+7. Перед первым тестом очищен кэш списков (`tools/clear_list_cache.py`), иначе
+   старый `list_tb` под ключом `album_artist\Дэн` показывал бы 5.

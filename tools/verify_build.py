@@ -28,8 +28,8 @@ CHAIN = [
     "patch_player", "patch_sql", "exp_album_view", "exp_flags_view21",
     "exp_coverpath_combo", "exp_cover_kind9col", "exp_cover_kind9id",
     "exp_shuffle_linear", "exp_shuffle_guard", "exp_artist_toggle",
-    "exp_all_sort", "exp_albums_artist_album_artist", "exp_artist_tracks_component",
-    "exp_db_autofix",
+    "exp_toggle_album_artist", "exp_all_sort", "exp_albums_artist_album_artist",
+    "exp_artist_tracks_component", "exp_db_autofix",
 ]
 BAD = ("неожиданн", "не найдено", "занято", "не влезает", "Traceback")
 
