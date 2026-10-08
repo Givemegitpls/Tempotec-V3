@@ -4,48 +4,56 @@
 
 ## Рабочее состояние
 
-**Selfdb5** — бинарь `c7de2e50…`, образ `out/v3_analog_selfdb5.upt` (ISO/UBI
-см. манифест). Проверено на устройстве:
-- после «обновления медиатеки» БД собирается **самим плеером**: 17 триггеров,
-  `ARTIST_TABLE` 77 без склеек, `MEDIA_TABLE` 3798 без «сырых» букв, порядок по
-  `character`, integrity ok — **внешние скрипты не нужны**;
-- подключение USB не вешает (adb опционален, по маркеру `/mnt/sd_0/enable_adb`).
-
-Состав: `4429784b` (база) + `patch_player --album-level` + `patch_sql` +
-`exp_album_view` + `exp_flags_view21` + `exp_coverpath_combo` +
-`exp_cover_kind9col` + `exp_cover_kind9id` + `exp_shuffle_linear` +
-`exp_shuffle_guard` + `exp_artist_toggle` + `exp_all_sort` +
-`exp_albums_by_component` + `exp_artist_tracks_component` +
-**`exp_db_autofix`** (хук `0x71D0B0`, выполняет `/usr/share/hiby_db_fix.sql`).
+- **Свежая сборка:** `out/v3_analog_aa_split.upt` (ISO md5 `b4d377d2…`, UBI
+  `cb027352…`, бинарь `1029d446…`) — Artists и «Исполнитель альбома» разведены
+  (5 vs 2), всё из версий 1–8. **Проверено на устройстве 2026-10-08** (сейчас
+  залито на плеер).
+- **Эталон цепочки:** бинарь `c7de2e50…` (Версия 8 CHANGELOG, база `4429784b` +
+  цепочка). `out/v3_analog_selfdb6.upt` — НЕ чистый эталон: его бинарь содержит
+  остаточный провальный `by_section` (stub @0x419328, hook @0x4a92a0).
+- **На устройстве сейчас:** `aa_split` (бинарь `1029d446…`) — залит и проверен;
+  кэш списков очищен (`tools/clear_list_cache.py`), БД-бэкап
+  `work/device/media_dev_20261008.db`.
+- **База сборки** `4429784b…` — НЕ сток (сток + `patch_player` + `patch_sql`);
+  настоящий сток — `work/hiby_player` (`3a5db0fa…`), см. `docs/stock-baseline.md`.
+- Цепочка: `patch_player --album-level → patch_sql → exp_album_view →
+  exp_flags_view21 → exp_coverpath_combo → exp_cover_kind9col →
+  exp_cover_kind9id → exp_shuffle_linear → exp_shuffle_guard →
+  exp_artist_toggle → exp_all_sort → exp_albums_artist_album_artist →
+  exp_artist_tracks_component → exp_db_autofix` (+ `overlay/`, SQL-файл).
+  (`exp_albums_by_component` заменён новым; `exp_albums_by_section` и
+  `exp_albums_album_artist` удалены как проваленные.)
 
 ## Открытые задачи
 
-1. **Развести Artists и «Исполнитель альбома».** Сейчас оба показывают одно и то
-   же (у Дэна 5). Ожидаемо: Album Artist — по `album_artist` (у Дэна 2).
-   Черновик — `experiments/2026-10-07/exp_album_list_context.py` (не сработал:
-   `jal` из RX кодируется с чужим верхним нибблом — нужен `jalr`). Учесть: место
-   в RX-зазоре уже занято авто-фиксом (0xa7ed00..0xa7ef9c) — потребуется больше
-   места (расширить RX-сегмент) или иная схема.
-2. **Полоска A–Z** в «Жанры», «Исполнитель альбома» и на подуровнях — её нет.
-3. **Транслит жанров на `É`** — 5 жанров без транслита (в `tools/translit_db.py`).
-4. **Чистка:** `work/_clr.db` (root) — удалить при удобном случае.
+1. **Полоска A–Z** в «Жанры», «Исполнителе альбома» и на подуровнях — её нет.
+2. **Транслит жанров на `É`** — 5 жанров без транслита (`tools/translit_db.py`).
+3. **Чистка:** `work/_clr.db` (root) — удалить при удобном случае.
+
+### Закрыто 2026-10-08
+
+- **Разведение Artists и «Исполнитель альбома»** — Artists→`Дэн Субботин` = 5,
+  «Исполнитель альбома»→`Дэн Субботин` = 2; проверено на устройстве. Детали —
+  `docs/next-album-artist.md`, скрипт `tools/exp_albums_artist_album_artist.py`.
 
 ## Процесс (см. AGENTS.md)
 
-- Один патч — одна итерация; после каждого — проверки и только потом следующий.
-- **До флеша:** `python3 tools/verify_build.py <bin> [--image out/x.upt] [--db <копия>]`
-  (права дерева, все `--check`, целостность образа, offline-симуляция БД).
-- **Чек-лист регрессий:** Artists / «Исполнитель альбома» / Albums / All / Files;
-  соавтор (`Дэн Субботин`); пустой список → «awaiting scan»; подключение USB не
-  вешает.
-- **Откат:** `adb push` known-good бинаря + `reboot`.
-- **Грабли:** права `hiby_player` = `775` (иначе бутлуп); `jal`/`j` из RX уходят
-  не туда — только `jalr`; маркер adb `/mnt/sd_0/enable_adb`.
+- Один патч — одна итерация; проверки ДО флеша:
+  `python3 tools/verify_build.py <bin> [--image out/x.upt] [--db <копия>]`.
+- Чек-лист: Artists / «Исполнитель альбома» / Albums / All / Files; соавтор
+  (`Дэн Субботин`); пустой список → «awaiting scan»; подключение USB не вешает.
+- Откат: `adb push` known-good бинаря + `reboot`; образы — в `out/`.
+- **Грабли:** права `hiby_player` = `775` (иначе бутлуп); `jal`/`j` из RX/пещеры —
+  только `jalr`; флаги `open` на MIPS o32 (`O_CREAT=0x100`, `O_APPEND=0x8`); adb —
+  по маркеру в момент загрузки.
 
 ## Артефакты
 
-- `overlay/` — файлы, добавляемые в rootfs при сборке (`etc/init.d/S98adb_debug`).
-- `experiments/2026-10-07/` — черновики (хук разведения разделов).
-- `tools/exp_db_autofix.py`, `tools/make_db_fix_sql.py`, `tools/verify_build.py`,
-  `tools/dedupe_rootfs.py` — инструменты самодостаточной БД и сборки.
-- `backup/` — копии релизных образов/бинарей; `out/` — собранные образы.
+- `docs/` — `stock-baseline.md` (сток), `ui-queries.md` (карта UI→SQL нашей v7),
+  `next-album-artist.md` (решение Artists/Album Artist).
+- `tools/` — патчи цепочки, `verify_build.py`, `dump_sql_slots.py`,
+  `make_db_fix_sql.py`, `dedupe_rootfs.py`, `exp_albums_artist_album_artist.py`
+  (разведение Artists/Album Artist), `diag_album_keys.py` (заготовка диагностики).
+- `overlay/` — файлы, добавляемые в rootfs при сборке (`S98adb_debug`).
+- `experiments/2026-10-07/` — ранние черновики.
+- `backup/` — релизные образы/бинари; `out/` — собранные образы.
