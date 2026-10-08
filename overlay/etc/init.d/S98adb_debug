@@ -1,20 +1,28 @@
 #!/bin/sh
 #
-# Отладочный скрипт: поднимает adb (Android Debug Bridge) поверх USB-гаджета.
-# Есть только в отладочной сборке (v3_analog_artists_with_adb.upt).
+# Отладочный скрипт: держит adb (Android Debug Bridge) поверх USB-гаджета
+# ПОСТОЯННО (сторож), пока на SD есть маркер /mnt/sd_0/enable_adb.
 #
-# Штатный UI этой модели режим Dock/adb не показывает, поэтому гаджет
-# настраивается напрямую через sysfs — в той же последовательности, что в
-# K90adb (сначала enable=0, только потом functions и enable=1).
+# Зачем сторож: раньше скрипт поднимал adb один раз (~150 с после загрузки) и
+# замолкал — если гаджет/adbd позже сбрасывались, adb пропадал и вернуть его
+# можно было только перезагрузкой плеера. Теперь раз в несколько секунд
+# проверяем: если `functions` не `adb` или adbd не запущен — перенастраиваем
+# гаджет (в той же последовательности, что K90adb: сначала enable=0, потом
+# functions/enable=1) и перезапускаем adbd.
 #
-# Отчёт пишется в /mnt/sd_0/adb_boot.log (если карта есть) и в /tmp/adb_boot.log;
-# вывод самого adbd — в /mnt/sd_0/adbd.log (или /tmp/adbd.log).
-# Скрипт работает ~3 минуты после загрузки и замолкает, чтобы не спорить с
-# USB-режимом, который выберет пользователь.
+# Отключить: удалить маркер /mnt/sd_0/enable_adb (или создать
+# /mnt/sd_0/disable_adb — сторож приостановится, чтобы можно было отдать карту
+# как накопитель).
+#
+# Отчёт — /mnt/sd_0/adb_boot.log (и /tmp/adb_boot.log); вывод adbd —
+# /mnt/sd_0/adbd.log (или /tmp/adbd.log).
 
 GADGET=/sys/class/android_usb/android0
+MARKER=/mnt/sd_0/enable_adb
+STOP=/mnt/sd_0/disable_adb
 LOG1=/mnt/sd_0/adb_boot.log
 LOG2=/tmp/adb_boot.log
+PERIOD=8
 
 log() {
     echo "$(date '+%H:%M:%S') $*" >>"$LOG1" 2>/dev/null
@@ -33,15 +41,10 @@ adbd_pid() {
 
 report() {
     log "--- $1"
-    log "gadget: $(ls /sys/class/android_usb/ 2>/dev/null | tr '\n' ' ')"
     for f in enable state functions idVendor idProduct; do
         log "  $f = $(cat $GADGET/$f 2>/dev/null)"
     done
-    log "  /dev/android*: $(ls -l /dev/android* 2>/dev/null | tr '\n' ' ')"
     log "  adbd pid: $(adbd_pid)"
-    log "  udc: $(ls /sys/class/udc/ 2>/dev/null | tr '\n' ' ')"
-    log "  $GADGET: $(ls $GADGET 2>/dev/null | tr '\n' ' ')"
-    log "  dmesg: $(dmesg 2>/dev/null | tail -12 | tr '\n' '|')"
 }
 
 try_functions() {
@@ -71,34 +74,33 @@ start_adbd() {
     fi
 }
 
+watchdog() {
+    report "boot"
+    while :; do
+        if [ -f "$STOP" ]; then
+            sleep "$PERIOD"
+            continue
+        fi
+        if [ ! -f "$MARKER" ]; then
+            sleep "$PERIOD"
+            continue
+        fi
+        fn=$(cat "$GADGET/functions" 2>/dev/null)
+        if [ "$fn" = "adb" ] && adbd_pid >/dev/null; then
+            sleep "$PERIOD"
+            continue
+        fi
+        if try_functions adb; then
+            start_adbd
+            report "watchdog: adb восстановлен"
+        fi
+        sleep "$PERIOD"
+    done
+}
+
 case "$1" in
     start)
-        (
-            report "boot"
-            i=0
-            ok=""
-            while [ $i -lt 10 ]; do
-                sleep 15
-                if [ ! -f /mnt/sd_0/enable_adb ]; then
-                    i=$((i + 1))
-                    continue
-                fi
-                for f in "adb"; do
-                    if try_functions "$f"; then
-                        ok="$f"
-                        break
-                    fi
-                done
-                [ -n "$ok" ] && break
-                i=$((i + 1))
-            done
-            if [ -n "$ok" ]; then
-                start_adbd
-                report "после включения ($ok)"
-            else
-                log "маркер /mnt/sd_0/enable_adb не найден — adb не включаю, гаджет не трогаю"
-            fi
-        ) &
+        watchdog &
         ;;
     stop)
         /sbin/kill_adbserver.sh >/dev/null 2>&1 &
