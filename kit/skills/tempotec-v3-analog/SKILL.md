@@ -43,7 +43,7 @@ description: "Use for Tempotec V3 Analog firmware work specifically: known base 
 + exp_all_sort.py               # ORDER BY character,name в SQL «All» (слоты 159/305)
 + exp_albums_by_component.py    # список альбомов артиста — матч по составляющей artist
 + exp_artist_tracks_component.py# списки треков артиста — то же (0x9ba000/0x9bb000)
-+ exp_db_autofix.py             # самодостаточная БД: хук @0x71D0B0 -> /usr/share/hiby_db_fix.sql
++ exp_db_autofix.py             # самодостаточная БД: хук @0x70ECFC -> /usr/share/hiby_db_fix.sql
 ```
 
 `exp_albums_by_album_artist` больше не применяется (Artists снова по тегу `artist`).
@@ -54,13 +54,18 @@ description: "Use for Tempotec V3 Analog firmware work specifically: known base 
 
 ## Медиатека
 
-**Самодостаточно (в образе):** `exp_db_autofix.py` (хук `0x71D0B0`, «Scanner
-stopped») выполняет `/usr/share/hiby_db_fix.sql` (генерируется
-`make_db_fix_sql.py`) через `sqlite3_exec` — после «обновления медиатеки» плеер
-сам расставляет буквы, разбирает `artist` по `;` и пересобирает списки.
-Компьютер и adb не нужны. Проверено: 17 триггеров, склеек 0, «сырых» букв 0.
-Точку `0x4E980C` (эпилог `FUN_004e97c0`) НЕ использовать — общая функция
-ожидания, вызывается и при подключении USB, плеер вешается.
+**Самодостаточно (в образе):** `exp_db_autofix.py` (хук `0x70ECFC` — `jal
+0x6fbd80` «commit transaction» в `FUN_0070eb00`) выполняет
+`/usr/share/hiby_db_fix.sql` (генерируется `make_db_fix_sql.py`, вшивается в образ
+`make.sh build`) через `sqlite3_exec` — после «обновления медиатеки» плеер сам
+расставляет буквы, разбирает `artist` по `;` и пересобирает списки. Компьютер и
+adb не нужны. Проверено offline: сырая БД (0 триггеров, 6 склеек, 1245 «сырых»
+букв) → 18 триггеров, склеек 0, «сырых» букв 0, integrity ok.
+
+Точки, которые НЕ использовать: `0x71D0B0` («Scanner stopped») — это FM-**радио**
+seek-сканер, при «обновлении медиатеки» не исполняется (старая версия хука молча
+не срабатывала); `0x4E980C` (эпилог `FUN_004e97c0`) — общая функция ожидания,
+вызывается и при подключении USB, плеер вешается.
 
 **Офлайн (скрипты, для копии базы или начальной настройки):**
 

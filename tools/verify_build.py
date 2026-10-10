@@ -7,9 +7,10 @@
 
 * без флагов  — прогон `--check` по всей цепочке патчей бинаря;
 * `--image`   — плюс `tools/make.sh verify` (дерево/хеши/патчи) через docker;
-* `--db`      — плюс offline-симуляция конвейера БД на КОПИИ базы:
-                translit → reorder → translit → split, затем инварианты
-                (триггеров >= 14, склеек 0, «сырых» букв 0, integrity ok).
+* `--db`      — плюс прогон ВШИТОГО `fw/SYSTEM/usr/share/hiby_db_fix.sql`
+                (тот же, что выполняет бинарь) на КОПИИ базы и проверка
+                инвариантов (триггеров >= 18, склеек 0, «сырых» букв 0,
+                integrity ok).
 """
 from __future__ import annotations
 
@@ -61,15 +62,23 @@ def check_image(image: Path) -> bool:
 
 
 def check_db(db: Path) -> bool:
+    """Прогон ВШИТОГО SQL (fw/SYSTEM/usr/share/hiby_db_fix.sql) на копии базы:
+    именно этот файл выполняет бинарь после «обновления медиатеки»."""
+    sql_path = ROOT / "fw/SYSTEM/usr/share/hiby_db_fix.sql"
+    if not sql_path.exists():
+        print(f"  FAIL нет {sql_path}")
+        return False
     with tempfile.TemporaryDirectory() as td:
         copy = Path(td) / "media.db"
         shutil.copy(db, copy)
-        for script in ("translit_db", "reorder_db", "translit_db", "split_artists_db"):
-            rc, out = run([sys.executable, str(TOOLS / f"{script}.py"), str(copy)])
-            if rc != 0:
-                print(f"  FAIL {script}: {out[:120]}")
-                return False
         con = sqlite3.connect(copy)
+        con.isolation_level = None
+        try:
+            con.executescript(sql_path.read_text(encoding="utf-8"))
+        except sqlite3.Error as e:
+            print(f"  FAIL SQL: {e}")
+            con.close()
+            return False
         trig = con.execute("SELECT count(*) FROM sqlite_master WHERE type='trigger'").fetchone()[0]
         comb = con.execute("SELECT count(*) FROM ARTIST_TABLE WHERE instr(artist,';')>0").fetchone()[0]
         comb_aa = con.execute(
@@ -80,7 +89,7 @@ def check_db(db: Path) -> bool:
         integ = con.execute("PRAGMA integrity_check").fetchone()[0]
         con.close()
         ok = trig >= 18 and comb == 0 and comb_aa == 0 and raw == 0 and integ == "ok"
-        print(f"  {'ok  ' if ok else 'FAIL'} БД: триггеров={trig} склеек={comb} "
+        print(f"  {'ok  ' if ok else 'FAIL'} БД (вшитый SQL): триггеров={trig} склеек={comb} "
               f"склеек_AA={comb_aa} сырых_букв={raw} integrity={integ}")
         return ok
 
@@ -101,6 +110,12 @@ def check_tree(tree: Path) -> bool:
             if p.is_file() and not (p.stat().st_mode & 0o111):
                 print(f"  FAIL init-скрипт не исполняемый: {p} ({oct(p.stat().st_mode & 0o777)})")
                 ok = False
+    dbfix = tree / "usr/share/hiby_db_fix.sql"
+    if dbfix.is_file() and dbfix.stat().st_size > 0:
+        print(f"  ok   {dbfix.relative_to(tree)} ({dbfix.stat().st_size} байт)")
+    else:
+        print(f"  FAIL нет {dbfix.relative_to(tree)} (вшить в образ: make.sh build)")
+        ok = False
     return ok
 
 

@@ -42,6 +42,7 @@ cmd_build() {
   $FW bash -c "
     set -e
     if [ -d overlay ]; then cp -a overlay/. $TREE/; fi
+    python3 tools/make_db_fix_sql.py --out $TREE/usr/share/hiby_db_fix.sql
     python3 tools/dedupe_rootfs.py $TREE
     chown -R 1004:1004 $TREE
     chmod 775 $TREE/usr/bin/hiby_player

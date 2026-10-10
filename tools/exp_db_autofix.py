@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
 """Авто-фикс медиатеки: бинарь сам выполняет SQL из образа.
 
-Хук в конце `FUN_004e97c0` (@0x4e980c, `lw ra,0x1c(sp)` — эпилог функции
-ожидания завершения «обновления медиатеки») читает `/usr/share/hiby_db_fix.sql`
-(лежит в образе, генерируется `tools/make_db_fix_sql.py`) и выполняет его через
+Хук в `FUN_0070eb00` (пересборка таблиц медиатеки) на инструкции `jal 0x6fbd80`
+(`0x70ecfc`, «commit transaction») читает `/usr/share/hiby_db_fix.sql` (лежит в
+образе, генерируется `tools/make_db_fix_sql.py`) и выполняет его через
 `sqlite3_exec` (`FUN_005f0be0(db, sql, 0, 0, 0)`). Так образ самодостаточен:
 после «обновления медиатеки» буквы/порядок/разбор `artist` по `;` приходят в
 порядок без внешних скриптов.
 
-Почему эта точка (разбор субагента): обновление запускается ТОЛЬКО из UI
-(меню/настройки, не при загрузке); пересборка таблиц идёт в `FUN_0070eb00`
-внутри транзакции (`begin` @0x70eb48, `commit` @0x70ecfc), после неё все
-prepared-выражения сброшены. `FUN_004e97c0` — busy-wait главного потока до
-`state+0x14` («готово»), т.е. её эпилог = «обновление закончилось, БД свободна».
+Почему эта точка: `FUN_0070eb00` — пересборка таблиц списков; единственный
+вызов — `0x7113d8` (в `FUN_007112a0`), а сама `FUN_007112a0` — из воркера
+«обновления медиатеки» (`FUN_004e93e0`, `0x4e939c`). `0x70ecfc` — общая точка
+схода всех внутренних веток (`0x70edc0 bnez -> 0x70ecfc`) сразу ПОСЛЕ
+`commit transaction`, т.е. БД свободна, транзакция закрыта.
 
-Delay-слот патча (0x4e9810 `lw s0,0x18(sp)`) исполняется до стаба → `s0` уже
-восстановлен; `ra` вызывающего лежит в кадре (0x1c(sp)). Стаб выполняет DBFIX и
-повторяет эпилог.
+Прежняя точка `0x71d0b0` (лог «Scanner stopped») — это FM-радио seek-сканер
+(рядом строки `Radio Seek Start/Status/...`), при «обновлении медиатеки» НЕ
+исполняется — отсюда «фикс не срабатывает». Хук на ней снимается автоматически.
 
 Чтение файла — сырыми syscall'ами MIPS o32 (open=4005, read=4003, close=4006);
-буфер — `malloc` (PLT-стаб 0xa7d6e0), освобождается `free` (0xa7dcf0).
+буфер — `malloc` (PLT-стаб `0xa7d6e0`), освобождается `free` (`0xa7dcf0`).
 ВАЖНО: из RX-зоны `jal`/`j` кодируются с верхним нибблом PC (0xa…), поэтому все
-вызовы делаются через `jalr` (lui+addiu+jalr).
+вызовы делаются через `jalr` (lui+addiu+jalr). Delay-слоты после `jalr`
+заполняются явно (без переиспользования t-регистров через вызов).
 
 Использование:
     python3 tools/exp_db_autofix.py <hiby_player> [--check]
@@ -33,16 +34,21 @@ import sys
 from pathlib import Path
 
 VTO = 0x400000
-STUB_VA = 0xA7ED00          # RX-зазор (освобождён от неудавшегося ctx-хука)
+STUB_VA = 0xA7ED00          # RX-зазор; стаб не должен пересечь RX_LIMIT
 PATH_VA = 0xA7EF80
-HOOK_VA = 0x71D0B0          # jal FUN_00713960 ("Scanner stopped") — проверенная точка
-HOOK_ORIG = 0x0C1C4E58      # jal 0x713960
-RX_LIMIT = 0xA7F000
+HOOK_VA = 0x70ECFC          # jal 0x6fbd80 ("commit transaction") в FUN_0070eb00
+HOOK_ORIG = 0x0C1BEF60      # jal 0x6fbd80
+RX_LIMIT = 0xA7EE1C         # здесь начинается строка слота 146 (patch_artist_cleanup)
+
+# снятие прежней (радио-сканер) точки
+LEGACY_HOOK_VA = 0x71D0B0
+LEGACY_HOOK_EXPECTED = 0x0C29FB77   # jal 0xa7eddc (старый стаб)
+LEGACY_HOOK_ORIG = 0x0C1C4E58       # jal FUN_00713960 (лог)
 
 PATH = b"/usr/share/hiby_db_fix.sql\x00"
 
 # адреса функций/стабов
-F_LOG = 0x00713960          # лог
+F_COMMIT = 0x006FBD80       # sqlite3_exec(db, "commit transaction")
 F_EXEC = 0x005F0BE0         # sqlite3_exec
 P_MALLOC = 0xA7D6E0         # PLT malloc
 P_FREE = 0xA7DCF0           # PLT free
@@ -70,8 +76,9 @@ def lui_addiu(reg: str, va: int) -> list[str]:
     return [f"lui {reg}, {hi:#x}", f"addiu {reg}, {reg}, {lo:#x}"]
 
 
-def call(reg: str, target: int) -> list[str]:
-    return lui_addiu(reg, target) + [f"jalr {reg}"]
+def call_jalr(reg: str, target: int, delay: str = "nop") -> list[str]:
+    """lui/addiu/jalr + явный delay-слот (не переиспользует t-регистры через вызов)."""
+    return lui_addiu(reg, target) + [f"jalr {reg}", delay]
 
 
 def assemble(base: int, lines: list[str]) -> bytes:
@@ -144,6 +151,10 @@ def assemble(base: int, lines: list[str]) -> bytes:
 
 
 def dbfix() -> list[str]:
+    """Читает /usr/share/hiby_db_fix.sql и выполняет его на БД медиатеки.
+
+    Вход: a0 = sqlite3* (тот же handle, что идёт в `commit transaction`).
+    """
     L: list[str] = [
         "DBFIX:",
         "addiu sp, sp, -0x30",
@@ -151,6 +162,7 @@ def dbfix() -> list[str]:
         "sw s0, 0x28(sp)",
         "sw s1, 0x24(sp)",
         "sw s2, 0x20(sp)",
+        "sw a0, 0x1c(sp)",          # db handle
         # fd = open(path, 0, 0)
         "addiu v0, zero, 4005",
     ]
@@ -163,9 +175,8 @@ def dbfix() -> list[str]:
         "move s0, v0",
     ]
     # buf = malloc(0x8000)
-    L += call("t9", P_MALLOC)
+    L += call_jalr("t9", P_MALLOC, "ori a0, zero, 0x8000")
     L += [
-        "ori a0, zero, 0x8000",
         "move s1, v0",
         "beq s1, zero, DBFIX_close",
         "move s2, zero",
@@ -185,19 +196,16 @@ def dbfix() -> list[str]:
         "addu t0, s1, s2",
         "sb zero, 0(t0)",
         # exec(db, buf, 0, 0, 0)
-        "lui t0, 0xbc",
-        "lw t0, 0x18f0(t0)",
-        "lw a0, 0(t0)",
+        "lw a0, 0x1c(sp)",
         "move a1, s1",
         "move a2, zero",
         "move a3, zero",
         "sw zero, 0x10(sp)",
     ]
-    L += call("t9", F_EXEC)
+    L += call_jalr("t9", F_EXEC)
     # free(buf)
-    L += call("t9", P_FREE)
+    L += call_jalr("t9", P_FREE, "move a0, s1")
     L += [
-        "move a0, s1",
         "DBFIX_close:",
         "addiu v0, zero, 4006",
         "move a0, s0",
@@ -213,28 +221,23 @@ def dbfix() -> list[str]:
     return L
 
 
-def hook_log() -> list[str]:
-    """Вызывается вместо `jal FUN_00713960` (лог "Scanner stopped", 0x71d0b0):
-    логирует, затем выполняет DBFIX. Проверенная точка: на ней БД после
-    «обновления медиатеки» собирается правильно и висняка нет.
+def tramp(dbfix_va: int) -> list[str]:
+    """Вызывается вместо `jal 0x6fbd80` (commit). a0 = sqlite3*, ra = 0x70ed04.
 
-    (Точка 0x4e980c — эпилог `FUN_004e97c0` — ОТВЕРГНУТА: это общая функция
-    ожидания, вызывается и при подключении USB, и наш SQL вешал плеер.)"""
+    Повторяет commit, затем выполняет DBFIX на том же handle и возвращается.
+    """
     L: list[str] = [
-        "addiu sp, sp, -0x20",
-        "sw ra, 0x1c(sp)",
-        "sw a0, 0x18(sp)",
-        "sw a1, 0x14(sp)",
+        "addiu sp, sp, -0x18",
+        "sw ra, 0x14(sp)",
+        "sw a0, 0x10(sp)",
     ]
-    L += call("t9", F_LOG)
-    L += call("t8", STUB_VA)          # DBFIX (jalr — из RX иначе нельзя)
+    L += call_jalr("t9", F_COMMIT)          # commit (a0 уже = db)
+    L += ["lw a0, 0x10(sp)"]                # db handle для DBFIX
+    L += call_jalr("t9", dbfix_va)          # DBFIX
     L += [
-        "nop",                        # delay-слот jalr
-        "lw a0, 0x18(sp)",
-        "lw a1, 0x14(sp)",
-        "lw ra, 0x1c(sp)",
+        "lw ra, 0x14(sp)",
         "jr ra",
-        "addiu sp, sp, 0x20",
+        "addiu sp, sp, 0x18",
     ]
     return L
 
@@ -248,37 +251,51 @@ def main() -> int:
     path = Path(args[0])
     d = bytearray(path.read_bytes())
 
-    fix = assemble(STUB_VA, dbfix())
-    hook_addr = STUB_VA + len(fix)
-    hook = assemble(hook_addr, hook_log())
-    stub = fix + hook
-    expected = 3 << 26 | (hook_addr >> 2)
+    dbfix_code = assemble(STUB_VA, dbfix())
+    tramp_va = STUB_VA + len(dbfix_code)
+    tramp_code = assemble(tramp_va, tramp(STUB_VA))
+    stub = dbfix_code + tramp_code
+    expected = 3 << 26 | (tramp_va >> 2)
 
     cur = struct.unpack_from("<I", d, HOOK_VA - VTO)[0]
     done = cur == expected
+    legacy = struct.unpack_from("<I", d, LEGACY_HOOK_VA - VTO)[0]
 
     if check:
         print(f"{HOOK_VA:#x} = {cur:#010x} ({'хук' if done else 'сток'})")
-        print(f"  DBFIX @ {STUB_VA:#x}, hook @ {hook_addr:#x}, path @ {PATH_VA:#x}")
+        print(f"  DBFIX @ {STUB_VA:#x}, tramp @ {tramp_va:#x}, path @ {PATH_VA:#x}, "
+              f"stub {len(stub)} байт (лимит {RX_LIMIT-STUB_VA})")
+        if legacy == LEGACY_HOOK_EXPECTED:
+            print(f"  ВНИМАНИЕ: остался legacy-хук @ {LEGACY_HOOK_VA:#x} (радио-сканер)")
         return 0
 
-    if done:
+    if done and legacy != LEGACY_HOOK_EXPECTED:
         print("уже пропатчено (db autofix)")
         return 0
     if cur != HOOK_ORIG:
         raise SystemExit(f"{HOOK_VA:#x}: ожидался {HOOK_ORIG:#010x}, найдено {cur:#010x}")
 
-    if STUB_VA + len(stub) > PATH_VA:
-        raise SystemExit(f"стаб перекрывает путь: {STUB_VA+len(stub):#x} > {PATH_VA:#x}")
+    # снять прежний хук (иначе он прыгнет в середину нового стаба)
+    if legacy == LEGACY_HOOK_EXPECTED:
+        struct.pack_into("<I", d, LEGACY_HOOK_VA - VTO, LEGACY_HOOK_ORIG)
+        print(f"{LEGACY_HOOK_VA:#x}: legacy-хук снят (радио-сканер)")
+    elif legacy != LEGACY_HOOK_ORIG:
+        raise SystemExit(f"{LEGACY_HOOK_VA:#x}: неизвестное состояние {legacy:#010x}")
+
+    if STUB_VA + len(stub) > RX_LIMIT:
+        raise SystemExit(f"стаб перекрывает RX_LIMIT: {STUB_VA+len(stub):#x} > {RX_LIMIT:#x}")
+    path_cur = bytes(d[PATH_VA - VTO : PATH_VA - VTO + len(PATH)])
+    if path_cur not in (bytes(len(PATH)), PATH):
+        raise SystemExit(f"путь {PATH_VA:#x} занят: {path_cur[:16]!r}")
+
     off = STUB_VA - VTO
-    if not all(b == 0 for b in d[off : PATH_VA - VTO + len(PATH)]):
-        raise SystemExit(f"RX-место {STUB_VA:#x}..{PATH_VA:#x} занято")
     d[off : off + len(stub)] = stub
     d[PATH_VA - VTO : PATH_VA - VTO + len(PATH)] = PATH
     struct.pack_into("<I", d, HOOK_VA - VTO, expected)
 
     path.write_bytes(bytes(d))
-    print(f"{path}: авто-фикс БД по завершении скана (DBFIX @{STUB_VA:#x}, hook @{hook_addr:#x})")
+    print(f"{path}: авто-фикс БД после пересборки медиатеки "
+          f"(DBFIX @{STUB_VA:#x}, tramp @{tramp_va:#x}, hook @{HOOK_VA:#x})")
     return 0
 
 
