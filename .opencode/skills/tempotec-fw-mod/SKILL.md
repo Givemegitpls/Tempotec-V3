@@ -63,9 +63,11 @@ sqlite3), а не «на глаз»: пример — `tools/test_query.py`.
 Начиная с selfdb-сборки плеер **сам** приводит БД в порядок после «обновления
 медиатеки»: `tools/exp_db_autofix.py` (хук `0x71D0B0`, «Scanner stopped»)
 выполняет `/usr/share/hiby_db_fix.sql` (генерируется `tools/make_db_fix_sql.py`)
-через `sqlite3_exec`. SQL идемпотентный: карта `CYR_MAP`, триггеры `fix_char_*` и
-`split_ARTIST2_TABLE`, одноразовый разбор склеек и пересборка списков по
-`character`. Компьютер и adb не нужны.
+через `sqlite3_exec`. SQL идемпотентный: карта `CYR_MAP`, триггеры `fix_char_*`,
+`split_ARTIST2_TABLE` и `split_ALBUM_ARTIST2_TABLE` (разбор `;` на **любое** число
+соавторов — рекурсивный CTE), одноразовый разбор склеек и пересборка списков по
+`character`. Компьютер и adb не нужны. Подробности разбора соавторов —
+`docs/artist-split.md`.
 
 **Точку `0x4E980C` (эпилог `FUN_004e97c0`) НЕ использовать** — это общая функция
 ожидания, вызывается и при подключении USB; наш SQL там вешает плеер. Проверенная
@@ -87,9 +89,15 @@ sqlite3), а не «на глаз»: пример — `tools/test_query.py`.
 adb pull /data/usrlocal_media.db work/device/media.db
 python3 tools/translit_db.py  work/device/media.db   # кириллица -> латиница + триггеры для новых записей
 python3 tools/reorder_db.py   work/device/media.db   # порядок строк по character
-python3 tools/album_artist_db.py work/device/media.db # «Артисты» = авторы альбомов
+python3 tools/translit_db.py  work/device/media.db   # ЕЩЁ РАЗ (reorder снёс триггеры)
+python3 tools/split_artists_db.py work/device/media.db # разбор соавторов artist/album_artist по ';'
 adb push work/device/media.db /data/usrlocal_media.db && adb shell 'sync; reboot'
 ```
+
+Порядок важен: `reorder_db` пересоздаёт таблицы (`rename`+`create`) и **сносит**
+триггеры, поэтому `translit_db` идёт вторым проходом. `split_artists_db` — последним
+(создаёт CTE-триггеры, разбирает существующие склейки, пересобирает
+`ARTIST_TABLE`/`ALBUM_ARTIST_TABLE`).
 
 Правки переживают перезагрузку и обновление медиатеки в плеере (триггеры `fix_char_*`),
 но при полном пересоздании БД с нуля их надо повторить.
@@ -121,12 +129,21 @@ adb push work/device/media.db /data/usrlocal_media.db && adb shell 'sync; reboot
 и RX-заглушка `0xa7e500` на jump-таблице типа 4 (`0x9642ac`), которая показывает
 кнопку для типа 4, кроме ключа `album` (категория «Альбомы»). RX-карта:
 shuffle guard `0xa7e370`, artist-toggle `0xa7e500`, kind9-шаблон `0xa7e800`.
-Полная релизная цепочка (из базы `4429784b`):
+Полная релизная цепочка (из базы `4429784b`, порядок = `tools/verify_build.py`
+`CHAIN`):
 `patch_player --album-level → patch_sql → exp_album_view → exp_flags_view21 →
 exp_coverpath_combo → exp_cover_kind9col → exp_cover_kind9id →
-exp_shuffle_linear → exp_shuffle_guard → exp_artist_toggle → exp_all_sort →
-exp_albums_by_component → exp_artist_tracks_component → exp_db_autofix`
-(+ в образ `overlay/` и `/usr/share/hiby_db_fix.sql`). `exp_albums_by_album_artist`
+exp_shuffle_linear → exp_shuffle_guard → exp_shuffle_hierarchy →
+exp_artist_toggle → exp_toggle_album_artist → exp_all_sort →
+exp_albums_artist_album_artist → exp_artist_tracks_component → exp_db_autofix →
+patch_artist_cleanup`
+(+ в образ `overlay/` и `/usr/share/hiby_db_fix.sql`).
+`patch_artist_cleanup` — слоты чистки скана 143/146 → component-match, чтобы
+разбор соавторов (`split_*_TABLE`, `docs/artist-split.md`) переживал обновление
+медиатеки; строки в `.rodata 0x93f90c` и RX `0xa7ee1c`.
+`exp_shuffle_hierarchy` — переход «альбом → следующий альбом того же автора» и
+«последний альбом автора → следующий автор» (хуки в `.text`-пещере
+`0x4194a0`/`0x419600`; детали — `docs/album-step.md`, `.opencode/NOTES.md`). `exp_albums_by_album_artist`
 больше не применяется: Artists снова по тегу `artist` (слот 125 собирает
 `ARTIST_TABLE` из `ARTIST2_TABLE`). `exp_albums_by_component`/`exp_artist_tracks_component`
 делают фильтр списков альбомов/треков артиста матчем по составляющей `artist`

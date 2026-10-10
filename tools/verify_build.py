@@ -30,6 +30,7 @@ CHAIN = [
     "exp_shuffle_linear", "exp_shuffle_guard", "exp_shuffle_hierarchy",
     "exp_artist_toggle", "exp_toggle_album_artist", "exp_all_sort",
     "exp_albums_artist_album_artist", "exp_artist_tracks_component", "exp_db_autofix",
+    "patch_artist_cleanup",
 ]
 BAD = ("неожиданн", "не найдено", "занято", "не влезает", "Traceback")
 
@@ -71,14 +72,16 @@ def check_db(db: Path) -> bool:
         con = sqlite3.connect(copy)
         trig = con.execute("SELECT count(*) FROM sqlite_master WHERE type='trigger'").fetchone()[0]
         comb = con.execute("SELECT count(*) FROM ARTIST_TABLE WHERE instr(artist,';')>0").fetchone()[0]
+        comb_aa = con.execute(
+            "SELECT count(*) FROM ALBUM_ARTIST_TABLE WHERE instr(album_artist,';')>0").fetchone()[0]
         raw = con.execute(
             "SELECT count(*) FROM MEDIA_TABLE WHERE NOT (character BETWEEN 'A' AND 'Z') "
             "AND character!='~'").fetchone()[0]
         integ = con.execute("PRAGMA integrity_check").fetchone()[0]
         con.close()
-        ok = trig >= 14 and comb == 0 and raw == 0 and integ == "ok"
+        ok = trig >= 18 and comb == 0 and comb_aa == 0 and raw == 0 and integ == "ok"
         print(f"  {'ok  ' if ok else 'FAIL'} БД: триггеров={trig} склеек={comb} "
-              f"сырых_букв={raw} integrity={integ}")
+              f"склеек_AA={comb_aa} сырых_букв={raw} integrity={integ}")
         return ok
 
 

@@ -77,3 +77,18 @@
 - Точные слоты M3U/Playlist/Search-вставок (194–198) и подготовка statement'ов —
   строки в таблице `0x9b7730`, прямых ссылок нет; локализовать слой подготовки не удалось.
 - Explorer/Files: точная выборка списка (динамические `m3u_<n>`).
+
+## Разбор соавторов (`;`) и связанные слоты
+
+- **Слоты чистки скана 143/146** (`0x9c2090` / `0x9c219c`):
+  `DELETE FROM ARTIST2_TABLE|ALBUM_ARTIST2_TABLE WHERE … not in (SELECT DISTINCT
+  … FROM MEDIA2_TABLE)`. `MEDIA2_TABLE` хранит склейку `A;B`, поэтому составляющие
+  удаляются. Патч `tools/patch_artist_cleanup.py` → component-match `NOT EXISTS`
+  (строки в `.rodata 0x93f90c` и RX `0xa7ee1c`), иначе разбор соавторов не
+  переживает обновление медиатеки. См. `docs/artist-split.md`.
+- **`kind 0x21` «Songs of an album_artist»** (`0x63`) — строки-литералы
+  `0x9ba474/0x9bb874/0x9bb9e0/0x9bbb4c` с точным `album_artist = ?`. После разбора
+  соавторов у составляющей вернёт 0 строк («no music»); нужен component-match
+  (перенос в RX + правка `lui/addiu`) — `todo.md`, п.6.
+- **`slot 182`** (список альбомов автора) уже матчит составляющую
+  (`exp_albums_artist_album_artist.py`, строка `0x93fb00`) — работает для соавторов.

@@ -59,19 +59,77 @@ def letter_expr(col: str) -> str:
 
 
 SPLIT_TRIGGER = """
-CREATE TRIGGER IF NOT EXISTS split_ARTIST2_TABLE AFTER INSERT ON ARTIST2_TABLE
-WHEN instr(replace(NEW.artist,char(0),''),';')>0
+DROP TRIGGER IF EXISTS split_ARTIST2_TABLE;
+CREATE TRIGGER split_ARTIST2_TABLE AFTER INSERT ON ARTIST2_TABLE
+WHEN instr(substr(NEW.artist,1,length(NEW.artist)),';')>0
 BEGIN
   INSERT OR IGNORE INTO ARTIST2_TABLE(id,artist,character,cn,ctime,mtime,pinyin_charater)
-  SELECT NEW.id,
-         substr(replace(NEW.artist,char(0),''),1,instr(replace(NEW.artist,char(0),''),';')-1)||char(0),
-         NEW.character, NEW.cn, NEW.ctime, NEW.mtime, NEW.pinyin_charater;
-  INSERT OR IGNORE INTO ARTIST2_TABLE(id,artist,character,cn,ctime,mtime,pinyin_charater)
-  SELECT NEW.id,
-         substr(replace(NEW.artist,char(0),''),instr(replace(NEW.artist,char(0),''),';')+1)||char(0),
-         NEW.character, NEW.cn, NEW.ctime, NEW.mtime, NEW.pinyin_charater;
+  WITH RECURSIVE parts(rest,part) AS (
+    SELECT substr(NEW.artist,1,length(NEW.artist))||';',''
+    UNION ALL
+    SELECT substr(rest,instr(rest,';')+1), substr(rest,1,instr(rest,';')-1)
+    FROM parts WHERE rest<>''
+  )
+  SELECT NEW.id, part||char(0), NEW.character, NEW.cn, NEW.ctime, NEW.mtime,
+         NEW.pinyin_charater
+  FROM parts WHERE part<>'';
   DELETE FROM ARTIST2_TABLE WHERE rowid=NEW.rowid;
 END;
+"""
+
+# одноразовый разбор существующих склеек (top-level WITH RECURSIVE, любой
+# глубины). `substr(x,1,length(x))` снимает хвостовой NUL: replace(x,char(0),'')
+# NUL НЕ вырезает (проверено на вшитом SQLite 3.12.2).
+SPLIT_EXISTING = """
+INSERT OR IGNORE INTO ARTIST2_TABLE(id,artist,character,cn,ctime,mtime,pinyin_charater)
+WITH RECURSIVE split(id,rest,part,character,cn,ctime,mtime,pinyin) AS (
+  SELECT id, substr(artist,1,length(artist))||';', '', character, cn, ctime, mtime,
+         pinyin_charater
+    FROM ARTIST2_TABLE WHERE instr(substr(artist,1,length(artist)),';')>0
+  UNION ALL
+  SELECT id, substr(rest,instr(rest,';')+1), substr(rest,1,instr(rest,';')-1),
+         character, cn, ctime, mtime, pinyin
+    FROM split WHERE rest<>''
+)
+SELECT id, part||char(0), character, cn, ctime, mtime, pinyin
+FROM split WHERE part<>'';
+DELETE FROM ARTIST2_TABLE WHERE instr(substr(artist,1,length(artist)),';')>0;
+"""
+
+# то же для album_artist (колонки с mqa)
+SPLIT_TRIGGER_AA = """
+DROP TRIGGER IF EXISTS split_ALBUM_ARTIST2_TABLE;
+CREATE TRIGGER split_ALBUM_ARTIST2_TABLE AFTER INSERT ON ALBUM_ARTIST2_TABLE
+WHEN instr(substr(NEW.album_artist,1,length(NEW.album_artist)),';')>0
+BEGIN
+  INSERT OR IGNORE INTO ALBUM_ARTIST2_TABLE(id,album_artist,character,cn,ctime,mtime,mqa,pinyin_charater)
+  WITH RECURSIVE parts(rest,part) AS (
+    SELECT substr(NEW.album_artist,1,length(NEW.album_artist))||';',''
+    UNION ALL
+    SELECT substr(rest,instr(rest,';')+1), substr(rest,1,instr(rest,';')-1)
+    FROM parts WHERE rest<>''
+  )
+  SELECT NEW.id, part||char(0), NEW.character, NEW.cn, NEW.ctime, NEW.mtime,
+         NEW.mqa, NEW.pinyin_charater
+  FROM parts WHERE part<>'';
+  DELETE FROM ALBUM_ARTIST2_TABLE WHERE rowid=NEW.rowid;
+END;
+"""
+
+SPLIT_EXISTING_AA = """
+INSERT OR IGNORE INTO ALBUM_ARTIST2_TABLE(id,album_artist,character,cn,ctime,mtime,mqa,pinyin_charater)
+WITH RECURSIVE split(id,rest,part,character,cn,ctime,mtime,mqa,pinyin) AS (
+  SELECT id, substr(album_artist,1,length(album_artist))||';', '', character, cn, ctime,
+         mtime, mqa, pinyin_charater
+    FROM ALBUM_ARTIST2_TABLE WHERE instr(substr(album_artist,1,length(album_artist)),';')>0
+  UNION ALL
+  SELECT id, substr(rest,instr(rest,';')+1), substr(rest,1,instr(rest,';')-1),
+         character, cn, ctime, mtime, mqa, pinyin
+    FROM split WHERE rest<>''
+)
+SELECT id, part||char(0), character, cn, ctime, mtime, mqa, pinyin
+FROM split WHERE part<>'';
+DELETE FROM ALBUM_ARTIST2_TABLE WHERE instr(substr(album_artist,1,length(album_artist)),';')>0;
 """
 
 
@@ -93,17 +151,12 @@ def build() -> str:
           f"BEGIN UPDATE {table} SET character = {e} WHERE rowid=new.rowid; END;")
 
     A(SPLIT_TRIGGER.strip())
+    A(SPLIT_TRIGGER_AA.strip())
 
-    # одноразово: разобрать существующие склейки ARTIST2_TABLE
-    cols = "id,artist,character,cn,ctime,mtime,pinyin_charater"
-    core = "replace(artist,char(0),'')"
-    A(f"INSERT OR IGNORE INTO ARTIST2_TABLE({cols}) SELECT id, "
-      f"substr({core},1,instr({core},';')-1)||char(0), character, cn, ctime, mtime, pinyin_charater "
-      f"FROM ARTIST2_TABLE WHERE instr({core},';')>0;")
-    A(f"INSERT OR IGNORE INTO ARTIST2_TABLE({cols}) SELECT id, "
-      f"substr({core},instr({core},';')+1)||char(0), character, cn, ctime, mtime, pinyin_charater "
-      f"FROM ARTIST2_TABLE WHERE instr({core},';')>0;")
-    A(f"DELETE FROM ARTIST2_TABLE WHERE instr({core},';')>0;")
+    # одноразово: разобрать существующие склейки ARTIST2_TABLE (CTE, любой глубины)
+    A(SPLIT_EXISTING.strip())
+    # одноразово: то же для ALBUM_ARTIST2_TABLE
+    A(SPLIT_EXISTING_AA.strip())
 
     # одноразово: починить буквы у существующих записей (прогон upd-триггеров)
     for table, col in TARGETS:
