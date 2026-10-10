@@ -151,9 +151,11 @@ patch_artist_cleanup`
 `patch_artist_cleanup` — слоты чистки скана 143/146 → component-match, чтобы
 разбор соавторов (`split_*_TABLE`, `docs/artist-split.md`) переживал обновление
 медиатеки; строки в `.rodata 0x93f90c` и RX `0xa7ee1c`.
-`exp_shuffle_hierarchy` — переход «альбом → следующий альбом того же автора» и
-«последний альбом автора → следующий автор» (хуки в `.text`-пещере
-`0x4194a0`/`0x419600`; детали — `docs/album-step.md`, `.opencode/NOTES.md`). `exp_albums_by_album_artist`
+`exp_shuffle_hierarchy` — переход «альбом → следующий альбом того же автора»,
+«последний альбом автора → следующий автор» и «первый альбом автора → назад →
+последний альбом предыдущего автора» (заглушки в `.text`-пещере
+`0x4194a0`/`0x419800`; кадр `eos` `0xe00`, буфер последнего альбома `sp+0xc00`;
+детали — `docs/album-step.md`, `.opencode/NOTES.md`). `exp_albums_by_album_artist`
 больше не применяется: Artists снова по тегу `artist` (слот 125 собирает
 `ARTIST_TABLE` из `ARTIST2_TABLE`). `exp_albums_by_component`/`exp_artist_tracks_component`
 делают фильтр списков альбомов/треков артиста матчем по составляющей `artist`

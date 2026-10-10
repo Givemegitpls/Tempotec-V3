@@ -45,7 +45,8 @@
 
 Верхний список «Альбомы» не трогаем; порядок берётся из актуального списка
 автора (Artists и Album Artist — разные списки). Направление «назад» на границе
-автора остаётся штатным fallback. Идемпотентно, `--check`.
+автора (первый альбом) ведёт к **предыдущему автору** и его **последнему**
+альбому — симметрично «вперёд». Идемпотентно, `--check`.
 
     python3 tools/exp_shuffle_hierarchy.py <hiby_player> [--check]
 """
@@ -67,8 +68,8 @@ LOG_MARK_VA = 0x41B840         # .text-пещера: строка маркеро
 LOG_PATH = b"/mnt/sd_0/hier2.log\x00"
 # индексы: 0-6 eos_next_author|7=X key setup done|8=a na_scan|9=b entity row|
 # 10=c ctx-hook end|11=A ctx artist|12=B ctx album_artist|13=C ctx none|
-# 14=d eos entry|15=e eos forward|16=f eos prev|17=g eos done
-LOG_MARKS = b"0123456XabcABCdefgh"
+# 14=d eos entry|15=e eos forward|16=f eos prev|17=g eos done|18=i eos prev_author
+LOG_MARKS = b"0123456XabcABCdefghi"
 
 HOOK_CTX = 0x4A9288
 HOOK_CTX_OLD = 0x0C1C28E8      # jal 0x70a3a0
@@ -300,17 +301,21 @@ def stub_ctx() -> list[str]:
 
 def stub_eos() -> list[str]:
     """a0=&L"album", a1=idx, a2=rec, s2=dir(1=next,0=prev), s3=&DAT_00b05224;
-    ra=0x4eaf34. Кадр 0xc00: scratch=0x20(0xa88), keybuf=0xab0(0x104);
+    ra=0x4eaf34. Кадр 0xe00: scratch=0x20(0xa88), keybuf=0xab0(0x104),
+    lastbuf=0xc00(0x100);
     ra=0xbfc, a0=0xbf8, a1=0xbf4, a2=0xbf0, ctx=0xbec, i=0xbe8, entkey=0xbe4,
-    dst=0xbe0, name=0xbdc, j=0xbd8.
+    dst=0xbe0, name=0xbdc, j=0xbd8, k=0xbd4, idx=0xbc8, tmpptr=0xbb8.
 
     Логика: если контекст автора задан и ключ плейлиста `album\\…` — найти текущий
     альбом в списке автора (штатная FUN_004369a0(ctx_key,i)), взять соседний.
     «Вперёд»: если сосед пуст или совпал с текущим (доиграл последний альбом
     автора) — перейти к следующему автору (список сущностей
     ARTIST_TABLE/ALBUM_ARTIST_TABLE → первый альбом нового автора) и обновить
-    ctx-ключ; иначе — просто подменить имя альбома. Любая ошибка — штатный
-    fallback (FUN_004369a0(L"album", idx, rec))."""
+    ctx-ключ; иначе — просто подменить имя альбома.
+    «Назад»: сосед i-1; если i==0 (первый альбом автора) — перейти к ПРЕДЫДУЩЕМУ
+    автору и взять его ПОСЛЕДНИЙ альбом (цикл по строкам; ридер за концом списка
+    не чистит rec, поэтому берём «последнее валидное» в отдельный буфер).
+    Любая ошибка — штатный fallback (FUN_004369a0(L"album", idx, rec))."""
     return [
         "move t7, a0",
         "move t8, a1",
@@ -319,7 +324,7 @@ def stub_eos() -> list[str]:
         "move a0, t7",
         "move a1, t8",
         "move a2, t9",
-        "addiu sp, sp, -0xc00",
+        "addiu sp, sp, -0xe00",
         "sw ra, 0xbfc(sp)",
         "sw a0, 0xbf8(sp)",
         "sw a1, 0xbf4(sp)",
@@ -373,7 +378,7 @@ def stub_eos() -> list[str]:
         "eos_prev:",
         *lg(16),
         "addiu a1, t0, -1",
-        "bltz a1, eos_fallback", "nop",
+        "bltz a1, eos_prev_author", "nop",
         "sw a1, 0xbd4(sp)",
         *getrow_view(["lw t0, 0xbec(sp)", "addiu t0, t0, 4"], ["lw a1, 0xbd4(sp)"]),
         "lhu t0, 0x44c(sp)",
@@ -381,6 +386,125 @@ def stub_eos() -> list[str]:
         "lw t1, 0xbf0(sp)", "addiu a0, t1, 0x20c",
         "addiu a1, sp, 0x44c",
         "addiu a2, zero, 0x103",
+        *call("t9", F_WCPY), "nop",
+        "b eos_done", "nop",
+        # ---- предыдущий автор (назад на границе: первый альбом автора) ----
+        "eos_prev_author:",
+        *lg(18),
+        "lw t2, 0xbec(sp)", "lw t0, 0(t2)",
+        "addiu t1, zero, 1",
+        "bne t0, t1, pa_aa", "nop",
+        # type 1: список сущностей "artist", имя автора в ctx+0x12
+        "lui t0, 0x0096", "addiu t0, t0, 0x0b3c",
+        "sw t0, 0xbe4(sp)",
+        "addiu a0, sp, 0xab0",
+        "move a1, t0",
+        "addiu a2, zero, 0x82",
+        *call("t9", F_WCPY), "nop",
+        "addiu t0, zero, 0x5c", "sh t0, 0xabc(sp)",
+        "addiu t0, sp, 0xabe", "sw t0, 0xbe0(sp)",
+        "lw t0, 0xbec(sp)", "addiu t0, t0, 0x12", "sw t0, 0xbdc(sp)",
+        "b pa_scan", "nop",
+        "pa_aa:",
+        # type 2: список сущностей "album_artist", имя автора в ctx+0x1e
+        "lui t0, 0x0096", "addiu t0, t0, 0x0b30",
+        "sw t0, 0xbe4(sp)",
+        "addiu a0, sp, 0xab0",
+        "move a1, t0",
+        "addiu a2, zero, 0x82",
+        *call("t9", F_WCPY), "nop",
+        "addiu t0, zero, 0x5c", "sh t0, 0xac8(sp)",
+        "addiu t0, sp, 0xaca", "sw t0, 0xbe0(sp)",
+        "lw t0, 0xbec(sp)", "addiu t0, t0, 0x1e", "sw t0, 0xbdc(sp)",
+        "pa_scan:",
+        "addiu t0, zero, 0", "sw t0, 0xbd8(sp)",
+        "pa_loop:",
+        "lw t0, 0xbd8(sp)",
+        "sltiu t1, t0, 0x40",
+        "beq t1, zero, eos_fallback", "nop",
+        *getrow_sql(["lw t0, 0xbe4(sp)"], ["lw a1, 0xbd8(sp)"]),
+        "lhu t0, 0x22c(sp)",
+        "beq t0, zero, eos_fallback", "nop",
+        "addiu a0, sp, 0x22c",
+        "lw a1, 0xbdc(sp)",
+        *call("t9", F_WCMP), "nop",
+        "beq v0, zero, pa_found", "nop",
+        "lw t0, 0xbd8(sp)", "addiu t0, t0, 1", "sw t0, 0xbd8(sp)",
+        "b pa_loop", "nop",
+        "pa_found:",
+        # индекс предыдущего автора = j-1
+        "lw t0, 0xbd8(sp)", "addiu t0, t0, -1", "sw t0, 0xbd4(sp)",
+        "bltz t0, eos_fallback", "nop",
+        *getrow_sql(["lw t0, 0xbe4(sp)"], ["lw a1, 0xbd4(sp)"]),
+        "lhu t0, 0x22c(sp)",
+        "beq t0, zero, eos_fallback", "nop",
+        "addiu a0, sp, 0x22c",
+        "lw a1, 0xbdc(sp)",
+        *call("t9", F_WCMP), "nop",
+        "beq v0, zero, eos_fallback", "nop",
+        # keybuf = "artist"/"album_artist" + '\' + имя предыдущего автора
+        "lw a0, 0xbe0(sp)",
+        "addiu a1, sp, 0x22c",
+        "addiu a2, zero, 0x60",
+        *call("t9", F_WCPY), "nop",
+        # строим список альбомов предыдущего автора
+        "addiu a0, sp, 0x20",
+        "move a1, zero",
+        "addiu a2, zero, 0xa88",
+        *call("t9", F_MEMSET), "nop",
+        "addiu a0, sp, 0x24",
+        "addiu a1, sp, 0xab0",
+        "addiu a2, zero, 0x82",
+        *call("t9", F_WCPY), "nop",
+        "addiu a0, sp, 0x54c",
+        "addiu a1, sp, 0xab0",
+        "addiu a2, zero, 0x82",
+        *call("t9", F_WCPY), "nop",
+        "addiu a0, zero, 9",
+        "move a1, zero",
+        "addiu a2, sp, 0x20",
+        "move a3, zero",
+        *call("t9", F_LISTBUILD), "nop",
+        # последний альбом: цикл по строкам, сохраняем последнее непустое имя
+        # (ридер за концом списка НЕ чистит rec — поэтому берём «последнее
+        #  валидное», а результат кладём в отдельный буфер sp+0xc00)
+        "addiu a0, sp, 0x20",
+        "move a1, zero",
+        "addiu a2, zero, 0xa88",
+        *call("t9", F_MEMSET), "nop",
+        "sh zero, 0xc00(sp)",
+        "addiu t0, zero, 0", "sw t0, 0xbc8(sp)",
+        "pa_alb_loop:",
+        "lw t0, 0xbc8(sp)",
+        "sltiu t1, t0, 0x40",
+        "beq t1, zero, pa_alb_end", "nop",
+        *getrow_view(["addiu t0, sp, 0xab0"], ["lw a1, 0xbc8(sp)"]),
+        "lhu t0, 0x44c(sp)",
+        "bne t0, zero, pa_alb_hi", "nop",
+        "lhu t0, 0x22c(sp)",
+        "beq t0, zero, pa_alb_end", "nop",
+        "addiu t0, sp, 0x22c", "sw t0, 0xbb8(sp)",
+        "b pa_alb_cp", "nop",
+        "pa_alb_hi:",
+        "addiu t0, sp, 0x44c", "sw t0, 0xbb8(sp)",
+        "pa_alb_cp:",
+        "addiu a0, sp, 0xc00",
+        "lw a1, 0xbb8(sp)",
+        "addiu a2, zero, 0x100",
+        *call("t9", F_WCPY), "nop",
+        "lw t0, 0xbc8(sp)", "addiu t0, t0, 1", "sw t0, 0xbc8(sp)",
+        "b pa_alb_loop", "nop",
+        "pa_alb_end:",
+        "lhu t0, 0xc00(sp)",
+        "beq t0, zero, eos_fallback", "nop",
+        "lw t1, 0xbf0(sp)", "addiu a0, t1, 0x20c",
+        "addiu a1, sp, 0xc00",
+        "addiu a2, zero, 0x103",
+        *call("t9", F_WCPY), "nop",
+        # обновляем ctx-ключ на предыдущего автора
+        "lw t0, 0xbec(sp)", "addiu a0, t0, 4",
+        "addiu a1, sp, 0xab0",
+        "addiu a2, zero, 0x82",
         *call("t9", F_WCPY), "nop",
         "b eos_done", "nop",
         # ---- следующий автор ----
@@ -508,7 +632,7 @@ def stub_eos() -> list[str]:
         *lg(17),
         "lw ra, 0xbfc(sp)",
         "jr ra",
-        "addiu sp, sp, 0xc00",
+        "addiu sp, sp, 0xe00",
     ]
 
 
@@ -542,25 +666,24 @@ def main() -> int:
     if done:
         print("уже пропатчено (shuffle hierarchy)")
         return 0
-    if hook_ctx != HOOK_CTX_OLD:
-        raise SystemExit(f"{HOOK_CTX:#x}: ожидался {HOOK_CTX_OLD:#010x}, найдено {hook_ctx:#010x}")
-    if hook_eos != HOOK_EOS_OLD:
-        raise SystemExit(f"{HOOK_EOS:#x}: ожидался {HOOK_EOS_OLD:#010x}, найдено {hook_eos:#010x}")
+    if hook_ctx not in (HOOK_CTX_OLD, ctx_new):
+        raise SystemExit(
+            f"{HOOK_CTX:#x}: ожидался {HOOK_CTX_OLD:#010x} или {ctx_new:#010x}, найдено {hook_ctx:#010x}")
+    if hook_eos not in (HOOK_EOS_OLD, eos_new):
+        raise SystemExit(
+            f"{HOOK_EOS:#x}: ожидался {HOOK_EOS_OLD:#010x} или {eos_new:#010x}, найдено {hook_eos:#010x}")
 
-    for va, blob in ((STUB_CTX, ctx_code), (STUB_EOS, eos_code)):
-        off = va - VTO
-        if not all(b == 0 for b in d[off:off + len(blob)]):
-            raise SystemExit(f"место {va:#x} занято")
     if STUB_CTX + len(ctx_code) > STUB_EOS:
         raise SystemExit(
             f"ctx-заглушка {STUB_CTX:#x}+{len(ctx_code)} перекрывает eos {STUB_EOS:#x}")
+    if STUB_EOS + len(eos_code) > 0x41B800:
+        raise SystemExit(
+            f"eos-заглушка {STUB_EOS:#x}+{len(eos_code)} перекрывает diag-зону 0x41b800")
     d[STUB_CTX - VTO:STUB_CTX - VTO + len(ctx_code)] = ctx_code
     d[STUB_EOS - VTO:STUB_EOS - VTO + len(eos_code)] = eos_code
     if DIAG:
         for va, blob in ((LOG_PATH_VA, LOG_PATH), (LOG_MARK_VA, LOG_MARKS)):
             off = va - VTO
-            if not all(b == 0 for b in d[off:off + len(blob)]):
-                raise SystemExit(f"diag-место {va:#x} занято")
             d[off:off + len(blob)] = blob
     struct.pack_into("<I", d, HOOK_CTX - VTO, ctx_new)
     struct.pack_into("<I", d, HOOK_EOS - VTO, eos_new)
