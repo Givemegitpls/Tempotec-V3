@@ -25,7 +25,7 @@
    - «назад»: берём i-1 (i==0 → fallback), копируем имя в `rec+0x20c`;
    - иначе/ошибка — штатный `FUN_004369a0` (fallback, поведение не меняется).
 3. Следующий автор: тип ctx (1=`artist`, 2=`album_artist`) → ключ списка сущностей
-   `L"artist"`/`L"album_artist"`; имя текущего автора = `ctx+0x12` / `ctx+0x1c`;
+   `L"artist"`/`L"album_artist"`; имя текущего автора = `ctx+0x12` / `ctx+0x1e`;
    сканируем список сущностей и ищем текущего автора по `scratch+0x20c`; берём
    j+1 (пусто/совпало → fallback); собираем ключ `artist\\<новый автор>` в буфере,
    строим список альбомов нового автора штатным `FUN_0070a3a0(9,0,rec,0)` и берём
@@ -401,7 +401,8 @@ def stub_eos() -> list[str]:
         "lw t0, 0xbec(sp)", "addiu t0, t0, 0x12", "sw t0, 0xbdc(sp)",
         "b na_scan", "nop",
         "na_aa:",
-        # type 2: список сущностей "album_artist", имя автора в ctx+0x1c
+        # type 2: список сущностей "album_artist", имя автора в ctx+0x1e
+        # ("album_artist\" = 13 wide-символов = 26 байт, имя с байта 0x1e)
         "lui t0, 0x0096", "addiu t0, t0, 0x0b30",
         "sw t0, 0xbe4(sp)",
         "addiu a0, sp, 0xab0",
@@ -410,7 +411,7 @@ def stub_eos() -> list[str]:
         *call("t9", F_WCPY), "nop",
         "addiu t0, zero, 0x5c", "sh t0, 0xac8(sp)",
         "addiu t0, sp, 0xaca", "sw t0, 0xbe0(sp)",
-        "lw t0, 0xbec(sp)", "addiu t0, t0, 0x1c", "sw t0, 0xbdc(sp)",
+        "lw t0, 0xbec(sp)", "addiu t0, t0, 0x1e", "sw t0, 0xbdc(sp)",
         "na_scan:",
         *lg(7),
         *lg(8),
