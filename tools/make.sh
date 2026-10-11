@@ -6,7 +6,10 @@
 #   ./tools/make.sh patch    # правки бинарей в fw/SYSTEM
 #   ./tools/make.sh build    # fw/SYSTEM -> SYSTEM.UBI -> md5 -> out/*.upt
 #   ./tools/make.sh verify   # распаковать собранный образ и сверить с fw/SYSTEM
+#   ./tools/make.sh audit    # дифф fw/SYSTEM со стоком: что войдёт в образ
 #   ./tools/make.sh all      # unpack + patch + build + verify
+#
+# Сборка с нуля (чистый сток + вся цепочка патчей) — ./tools/build_all.sh
 #
 # Готовый образ: out/v3_analog_patched.upt
 set -euo pipefail
@@ -59,6 +62,24 @@ cmd_build() {
   "
 }
 
+cmd_audit() {
+  $FW bash -c "
+    set -e
+    A=/tmp/audit_stock
+    rm -rf \$A; mkdir -p \$A/iso
+    7z x -y $SRC -o\$A/iso >/dev/null
+    ubireader_extract_files -k -o \$A/SYSTEM \$A/iso/SYSTEM.UBI >/dev/null 2>&1
+    echo '--- сток-бинарь:'
+    md5sum \$A/SYSTEM/usr/bin/hiby_player
+    echo '--- бинарь в дереве:'
+    md5sum $TREE/usr/bin/hiby_player 2>/dev/null || true
+    echo '--- состав образа (отличия $TREE от стока):'
+    diff -r --no-dereference -q \$A/SYSTEM $TREE || true
+    echo '--- вшитый SQL:'
+    md5sum $TREE/usr/share/hiby_db_fix.sql 2>/dev/null || echo '  нет (генерируется на build)'
+  "
+}
+
 cmd_verify() {
   $FW bash -c "
     set -e
@@ -82,6 +103,7 @@ case "${1:-all}" in
   patch)  shift; cmd_patch "$@" ;;
   build)  cmd_build ;;
   verify) cmd_verify ;;
+  audit)  cmd_audit ;;
   all)    cmd_unpack; cmd_patch; cmd_build; cmd_verify ;;
-  *)      echo "использование: $0 {unpack|patch|build|verify|all} [имя образа для build/verify]" >&2; exit 1 ;;
+  *)      echo "использование: $0 {unpack|patch|build|verify|audit|all} [имя образа для build/verify]" >&2; exit 1 ;;
 esac

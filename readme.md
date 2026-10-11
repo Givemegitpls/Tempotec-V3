@@ -68,6 +68,28 @@ ubireader_extract_files и mkfs.ubifs) и сравнивать содержим�
 шагом `make.sh build` и выполняется бинарём (хук `tools/exp_db_autofix.py`) по
 завершении «обновления медиатеки».
 
+### Сборка с нуля (воспроизводимо)
+
+```
+docker build -t tempotec-fw-tools docker     # инструменты: 7z, ubireader, mkfs.ubifs, genisoimage, python3
+./tools/build_all.sh v3_analog_clean.upt     # чистый сток -> цепочка патчей -> проверки -> out/*.upt
+./tools/make.sh audit                        # что именно войдёт в образ (дифф дерева со стоком)
+```
+
+`build_all.sh` заново распаковывает `v3_analog.upt.txt`, применяет
+`patch_player.py --album-level`, `patch_sql.py` и всю цепочку
+`tools/exp_*.py`/`patch_*.py` (порядок — `tools/verify_build.py:CHAIN`), затем
+прогоняет проверки (`verify_build.py`, включая прогон вшитого SQL на копии базы)
+и собирает образ. Ничего «на стороне» не требуется: в образ попадают только
+патченый `usr/bin/hiby_player`, файлы из `overlay/` и сгенерированный
+`usr/share/hiby_db_fix.sql`. `make.sh audit` показывает полный состав до сборки.
+
+Состав и метрики текущей сборки (`out/v3_analog_clean.upt`): бинарь
+`b34d7f70…` (та же логика, что у `86c28f7a…`: все 199 SQL-слотов совпадают по
+содержимому, отличия — только размещение перенесённых строк в свободном месте
+`.rodata` и «мёртвые» байты), `hiby_db_fix.sql` `18e85574…`, бинарь 0o775.
+Хеши `SYSTEM.UBI`/ISO невоспроизводимы (таймстампы) — сверять бинарь и дерево.
+
 Готовые образы (подробно — в `CHANGELOG.md`):
 - `out/v3_analog_selfdb5.upt` — **релиз**: всё из `v3_analog_artist_stock.upt`
   плюс **самодостаточная медиатека** (после «обновления медиатеки» прошивка сама

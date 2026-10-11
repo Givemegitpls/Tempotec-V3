@@ -1,9 +1,26 @@
 # TODO — Tempotec V3 Analog (мод прошивки)
 
-Обновлено: 2026-10-08.
+Обновлено: 2026-10-11.
 
 ## Рабочее состояние
 
+- **На карте плеера:** `v3_analog.upt` = наша сборка (`daff17c7…`, прошита
+  2026-10-11); рядом `v3_analog_usbmode3.upt` (`c4dbbcdd…`), `v3_analog_clean.upt`
+  (копия) и `v3_analog-old.upt` (= latest_nohier). Откат:
+  `backup/hiby_player.usbmode3_86c28f7a.bin` (adb push + reboot) или
+  `out/v3_analog_usbmode3.upt`.
+- **Воспроизводимая сборка с нуля (2026-10-11):** `out/v3_analog_clean.upt`
+  (ISO `daff17c7…`, UBI `6ff1d43d…`) — собрана `tools/build_all.sh` из чистого
+  стока (unpack → `patch_player --album-level` → `patch_sql` → вся цепочка →
+  `build`). Бинарь `b34d7f70…`, вшитый SQL `18e85574…`; все проверки OK
+  (18 патчей, права дерева, образ, прогон вшитого SQL на копии реальной БД:
+  триггеров 18, склеек 0, сырых букв 0, integrity ok). **Прошита и проверена на
+  устройстве (2026-10-11):** бинарь `b34d7f70…`, SQL `18e85574…`, tweaks
+  отсутствуют (`vfs_cache_pressure=100`, `read_ahead=128`, `relatime`, нет
+  `S90tune.sh`), UI работает. Логика идентична `86c28f7a…` (usbmode3): все 199
+  SQL-слотов совпадают по содержимому, отличия — только размещение перенесённых
+  строк и «мёртвые» байты (см. `.opencode/NOTES.md`). Rootfs-твики (`S90tune.sh`,
+  `sysctl`, `dac_to_store`) откачены: из `overlay/`, дерева и плеера убраны.
 - **Свежая сборка (назад на границе автора):** `out/v3_analog_albumstep6.upt`
   (UBI `f5a8a5e4…`, бинарь `ef105b98…`, ISO `d46ea907…`) — «первый альбом автора
   → назад → последний альбом предыдущего автора» (симметрично «вперёд»), Artists
