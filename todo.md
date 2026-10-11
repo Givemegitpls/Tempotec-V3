@@ -45,7 +45,8 @@
   exp_flags_view21 → exp_coverpath_combo → exp_cover_kind9col →
   exp_cover_kind9id → exp_shuffle_linear → exp_shuffle_guard →
   exp_shuffle_hierarchy → exp_artist_toggle → exp_toggle_album_artist → exp_all_sort →
-  exp_albums_artist_album_artist → exp_artist_tracks_component → exp_db_autofix`
+  exp_albums_artist_album_artist → exp_artist_tracks_component → exp_db_autofix →
+  patch_artist_cleanup → exp_usb_mode_adb`
   (+ `overlay/`, SQL-файл). (`exp_albums_by_component` заменён новым;
   `exp_albums_by_section` и `exp_albums_album_artist` удалены.)
 
@@ -56,19 +57,20 @@
    `out/v3_analog_albumstep5.upt` (бинарь `a3a29d9c…`). Работает в Artists и Album
    Artist: после последнего альбома автора включается первый альбом следующего
    автора. Грабли и разбор — `docs/album-step.md`, `work/next_artist_reader_design.md`.
-2. **adb: довести GUI-переключатель** (пасхалка About ×10 восстановлена правкой
-   `set_functions.json` `"about":1`; в бинаре `fcn.0050b8e0` порог `slti v0,0xa`
-   @`0x50b910`, зовёт `fcn.00476800` → `system("/etc/init.d/K90adb start|stop")`).
-   - Закрепить `about:1` в сборке (положить `set_functions.json` в `overlay/` или
-     сделать патч-скрипт — при `unpack` правка откатится).
-   - Снизить число тапов (порог `0xa` @`0x50b910` → напр. 3).
-   - Перенести триггер на «пианино» (логотип на About; сейчас тап по нему = титры
-     с авторами) — по желанию.
-   - Вернуть пункт USB-режима **Dock/adb** ИЛИ композитный `mass_storage,adb`
-     (карта и adb одновременно) — предпочтительнее «пианинки».
-   - Инфраструктура GUI есть: `about_dev`, `adb.dlg`, `menu/adb.png`,
-     `vg_listview_usb_mode`. Референс: `work/hiby_adb_reference.md`,
-     `work/hiby_adb_gui_reference.md`.
+2. **adb: пункт USB-режима «ADB» — СДЕЛАНО и проверено на устройстве (2026-10-11).**
+   `tools/exp_usb_mode_adb.py`: генератор `FUN_004d2760` строил 2 строки
+   (`dac`/`usb`); добавлена третья `adb` — код в пещере `0x41a000`, хук
+   `0x4d2800 → jal 0x41a000`. Режим `FUN_00476bc0(2)` = adb (`18D1:0D02`,
+   `functions=adb`), плюс пещера `0x41a100`/хук `0x476c80` — старт
+   `/sbin/adbserver.sh` (иначе adbd не поднимался). Метка `<adb>` переименована
+   «Dock»→**ADB** во всех языках (`tools/patch_usb_label.py`, в `make.sh build`).
+   Сборка `out/v3_analog_usbmode3.upt` (бинарь `86c28f7a…`). Разбор —
+   `work/adb_usb_mode_design.md`, `.opencode/NOTES.md`. **Проверено:** режим ADB
+   сохранён (config 8); после перезагрузки с кабелем adb поднимается сам; карта
+   остаётся у плеера. Маркер `enable_adb` и пасхалка About×10 не нужны.
+   - Композит `mass_storage,adb` (карта и ПК, и adb) — отдельная ветка
+     `FUN_00719880(1)` (`0x9c5b38`), не из `FUN_00476bc0`; делать по желанию.
+   - Референс: `work/hiby_adb_reference.md`, `work/hiby_adb_gui_reference.md`.
 3. **Полоска A–Z** в «Жанры», «Исполнителе альбома» и на подуровнях — её нет.
 4. **Транслит жанров на `É`** — 5 жанров без транслита (`tools/translit_db.py`).
 5. **Чистка:** `work/_clr.db` (root) — удалить при удобном случае.

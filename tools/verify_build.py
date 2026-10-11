@@ -21,6 +21,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import re
+
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 
@@ -31,7 +33,7 @@ CHAIN = [
     "exp_shuffle_linear", "exp_shuffle_guard", "exp_shuffle_hierarchy",
     "exp_artist_toggle", "exp_toggle_album_artist", "exp_all_sort",
     "exp_albums_artist_album_artist", "exp_artist_tracks_component", "exp_db_autofix",
-    "patch_artist_cleanup",
+    "patch_artist_cleanup", "exp_usb_mode_adb",
 ]
 BAD = ("неожиданн", "не найдено", "занято", "не влезает", "Traceback")
 
@@ -116,6 +118,20 @@ def check_tree(tree: Path) -> bool:
     else:
         print(f"  FAIL нет {dbfix.relative_to(tree)} (вшить в образ: make.sh build)")
         ok = False
+    strdir = tree / "usr/resource/str"
+    if strdir.is_dir():
+        bad = []
+        for f in sorted(strdir.glob("*/sys_set.ini")):
+            raw = f.read_bytes()
+            enc = ("utf-16-le" if raw[:2] == b"\xff\xfe"
+                   else "utf-16-be" if raw[:2] == b"\xfe\xff" else "utf-8")
+            text = (raw[2:] if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw).decode(enc)
+            m = re.search(r"<adb>(.*?)</adb>", text)
+            if m and m.group(1) != "ADB":
+                bad.append(f"{f.parent.name}:{m.group(1)}")
+        print(f"  {'ok  ' if not bad else 'FAIL'} метка USB-режима adb = ADB"
+              + (f" (не ADB: {bad})" if bad else ""))
+        ok &= not bad
     return ok
 
 

@@ -146,7 +146,7 @@ exp_coverpath_combo → exp_cover_kind9col → exp_cover_kind9id →
 exp_shuffle_linear → exp_shuffle_guard → exp_shuffle_hierarchy →
 exp_artist_toggle → exp_toggle_album_artist → exp_all_sort →
 exp_albums_artist_album_artist → exp_artist_tracks_component → exp_db_autofix →
-patch_artist_cleanup`
+patch_artist_cleanup → exp_usb_mode_adb`
 (+ в образ `overlay/` и `/usr/share/hiby_db_fix.sql`).
 `patch_artist_cleanup` — слоты чистки скана 143/146 → component-match, чтобы
 разбор соавторов (`split_*_TABLE`, `docs/artist-split.md`) переживал обновление
@@ -161,6 +161,11 @@ patch_artist_cleanup`
 делают фильтр списков альбомов/треков артиста матчем по составляющей `artist`
 (разбор склейки `X;Y` по `;`) — формула через `substr(x,1,length(x))`, НЕ через
 `replace(...,char(0),'')` (NUL ломает LIKE). `exp_db_autofix` — самодостаточная БД.
+`exp_usb_mode_adb` — пункт «ADB» в меню USB-режима: генератор `FUN_004d2760`
+строил 2 строки; третья — код в пещере `0x41a000`, хук `0x4d2800 → jal 0x41a000`.
+Плюс пещера `0x41a100`/хук `0x476c80` — старт `/sbin/adbserver.sh` для режима adb
+(иначе adbd не поднимается). Метка `<adb>` → `ADB` во всех языках:
+`patch_usb_label.py` (в `make.sh build`).
 `exp_all_sort` добавляет `ORDER BY character,name` в SQL списка «All»
 (слоты 159/305, строка `0x9c2438`). Детали — `.opencode/NOTES.md`.
 

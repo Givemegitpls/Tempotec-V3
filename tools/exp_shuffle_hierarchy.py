@@ -676,9 +676,9 @@ def main() -> int:
     if STUB_CTX + len(ctx_code) > STUB_EOS:
         raise SystemExit(
             f"ctx-заглушка {STUB_CTX:#x}+{len(ctx_code)} перекрывает eos {STUB_EOS:#x}")
-    if STUB_EOS + len(eos_code) > 0x41B800:
+    if STUB_EOS + len(eos_code) > 0x41A000:
         raise SystemExit(
-            f"eos-заглушка {STUB_EOS:#x}+{len(eos_code)} перекрывает diag-зону 0x41b800")
+            f"eos-заглушка {STUB_EOS:#x}+{len(eos_code)} перекрывает USB-пещеру 0x41a000")
     d[STUB_CTX - VTO:STUB_CTX - VTO + len(ctx_code)] = ctx_code
     d[STUB_EOS - VTO:STUB_EOS - VTO + len(eos_code)] = eos_code
     if DIAG:
