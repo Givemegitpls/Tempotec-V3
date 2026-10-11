@@ -54,6 +54,22 @@ Comparison of the current version against the stock image.
 **Rollback:** flash the stock `v3_analog.upt` (or a known-good build from `backup/`)
 the same way.
 
+## If names are rendered wrong ("Й"/"Ё" as two glyphs)
+
+Some tags come in decomposed Unicode form (NFD): `й` = `и` + breve. The player's
+font has no combining marks, so such a letter is drawn as two glyphs — an "и" with
+a small cap on its right. It is a property of the files, not of the firmware, but it
+can be fixed with the bundled script:
+
+```
+python3 tools/normalize_unicode.py --apply /path/to/music   # tags + file names
+python3 tools/normalize_unicode.py /path/to/music           # dry-run: report only
+```
+
+The script brings FLAC/MP3 tags and file and directory names to NFC. It is dry-run
+by default and writes nothing. After fixing, run **"Update library"** on the player
+once so that the database picks up the new tags.
+
 ## Building
 
 **Requirements:** Linux, `docker` installed, and the stock `v3_analog.upt` firmware

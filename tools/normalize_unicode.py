@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NFC-normalize Unicode in the TempotecMusic library.
+"""NFC-normalize Unicode in an audio library (tags and file/dir names).
 
-Fixes decomposed (NFD) sequences that some players render as two glyphs,
+Fixes decomposed (NFD) sequences that the player renders as two glyphs,
 e.g. ``и`` + U+0306 instead of ``й``, ``е`` + U+0308 instead of ``ё``,
 ``А`` + U+0306 instead of ``Й``.  Applies to:
 
@@ -9,16 +9,16 @@ e.g. ``и`` + U+0306 instead of ``й``, ``е`` + U+0308 instead of ``ё``,
   * ID3 frames of MP3 files,
   * file and directory names.
 
-Only NFC is applied.  NFKC is intentionally NOT used: ``.fat_stage``
-legitimately contains full-width substitutes (``： ？ ＊ ＂``) for characters
-that FAT32 forbids.
+Only NFC is applied.  NFKC is intentionally NOT used: a FAT32 staging tree
+may legitimately contain full-width substitutes (``： ？ ＊ ＂``) for
+characters that FAT32 forbids.
 
 Default = dry-run.  ``--apply`` writes tags and renames paths.
 
 Usage:
-    python3 normalize_unicode.py                 # dry-run, library/ + .fat_stage
-    python3 normalize_unicode.py --apply
-    python3 normalize_unicode.py --apply library
+    python3 tools/normalize_unicode.py --apply /path/to/library   # tags + names
+    python3 tools/normalize_unicode.py /path/to/library           # dry-run
+    python3 tools/normalize_unicode.py --apply library .fat_stage # defaults
 """
 
 from __future__ import annotations
