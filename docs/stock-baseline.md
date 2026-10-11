@@ -9,7 +9,7 @@ SQL-строки целиком — в `work/sql_slots_stock.txt` (199 слот�
 
 | Бинарь | md5 | Что это |
 |---|---|---|
-| `work/hiby_player` (= файл из `v3_analog.upt.txt` → `SYSTEM.UBI` → `usr/bin/hiby_player`) | `3a5db0fa7d2536ae564841f24b5f8b54` | **настоящий фабричный сток** |
+| `work/hiby_player` (= файл из `v3_analog.upt` → `SYSTEM.UBI` → `usr/bin/hiby_player`) | `3a5db0fa7d2536ae564841f24b5f8b54` | **настоящий фабричный сток** |
 | `backup/hiby_player.base_4429784b` (копия — `work/test_hf5/hiby_player.device_release`) | `4429784bfb605f8743b15e4e06660d01` | **НЕ сток** — наша release-сборка `v3_analog_artists` (уже с патчами) |
 | `work/test_hf5/hiby_player.artist_stock` | `edcb682f29fc38e69b7f804838ff16dd` | наша v7-сборка |
 
@@ -17,7 +17,7 @@ SQL-строки целиком — в `work/sql_slots_stock.txt` (199 слот�
 `patch_player` (kind 8 → `?1/?2`), `patch_sql` (слот 125 берётся из
 `ALBUM_ARTIST2_TABLE`, сортировки по `character`) и изменённый обработчик клика
 по «Исполнителю альбома» (`0x4aa21c`). Фабричный сток отличается от него на
-**1443 байта** и извлекается из оригинального `v3_analog.upt.txt`
+**1443 байта** и извлекается из оригинального `v3_analog.upt`
 (проверено: md5 совпал). Поэтому baseline снят с `work/hiby_player` (3a5db0fa),
 а `4429784b` приведён в разделе 4 как промежуточная «release-база».
 
@@ -257,7 +257,7 @@ SQL-строки целиком — в `work/sql_slots_stock.txt` (199 слот�
 
 1. **Идентичность бинаря из задания.** В задании `backup/hiby_player.base_4429784b`
    назван стоком, но это наша release-сборка (md5 не совпадает с файлом из
-   `v3_analog.upt.txt`; отличия — 1443 байта). Фабричный сток —
+   `v3_analog.upt`; отличия — 1443 байта). Фабричный сток —
    `3a5db0fa` (`work/hiby_player`). Нужно подтвердить у владельца, какой именно
    бинарь считать «стоком» для дальнейших сравнений.
 2. **Механика передачи ключа при клике.** `FUN_004a7500`/`FUN_004a75e0` читают

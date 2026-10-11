@@ -9,7 +9,7 @@
 /backup/
 
 # исходники прошивки в корне
-/v3_analog.upt.txt
+/v3_analog.upt
 /v3_analog.zip
 /kit.7z
 /cov.bin

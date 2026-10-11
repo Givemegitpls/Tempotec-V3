@@ -2,7 +2,7 @@
 # Сборка/разборка прошивки Tempotec V3 Analog. Всё внутри docker-образа
 # tempotec-fw-tools (см. docker/Dockerfile), в систему ничего не ставится.
 #
-#   ./tools/make.sh unpack   # v3_analog.upt.txt -> fw/unpacked + fw/SYSTEM
+#   ./tools/make.sh unpack   # v3_analog.upt -> fw/unpacked + fw/SYSTEM
 #   ./tools/make.sh patch    # правки бинарей в fw/SYSTEM
 #   ./tools/make.sh build    # fw/SYSTEM -> SYSTEM.UBI -> md5 -> out/*.upt
 #   ./tools/make.sh verify   # распаковать собранный образ и сверить с fw/SYSTEM
@@ -11,15 +11,18 @@
 #
 # Сборка с нуля (чистый сток + вся цепочка патчей) — ./tools/build_all.sh
 #
-# Готовый образ: out/v3_analog_patched.upt
+# Сток-исходник: v3_analog.upt в корне (переопределяется переменной SRC=...).
+# Имя результата: по умолчанию out/v3_analog.upt; иначе первый аргумент
+# (build|verify [имя]) или переменная окружения IMAGE=...
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FW=docker/fw.sh
-SRC=v3_analog.upt.txt
+SRC="${SRC:-v3_analog.upt}"
+if [ ! -f "$SRC" ] && [ -f v3_analog.upt.txt ]; then SRC=v3_analog.upt.txt; fi
 UNPACKED=fw/unpacked
 TREE=fw/SYSTEM
-OUT="out/${2:-v3_analog_patched.upt}"
+OUT="out/${IMAGE:-${2:-v3_analog.upt}}"
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 
@@ -105,5 +108,6 @@ case "${1:-all}" in
   verify) cmd_verify ;;
   audit)  cmd_audit ;;
   all)    cmd_unpack; cmd_patch; cmd_build; cmd_verify ;;
-  *)      echo "использование: $0 {unpack|patch|build|verify|audit|all} [имя образа для build/verify]" >&2; exit 1 ;;
+  *)      echo "использование: $0 {unpack|patch|build|verify|audit|all} [имя образа для build/verify]" >&2
+          echo "  SRC=... — исходник стока (по умолчанию v3_analog.upt); IMAGE=... — имя образа (по умолчанию v3_analog.upt)" >&2; exit 1 ;;
 esac

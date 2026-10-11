@@ -89,6 +89,6 @@
 - **`kind 0x21` «Songs of an album_artist»** (`0x63`) — строки-литералы
   `0x9ba474/0x9bb874/0x9bb9e0/0x9bbb4c` с точным `album_artist = ?`. После разбора
   соавторов у составляющей вернёт 0 строк («no music»); нужен component-match
-  (перенос в RX + правка `lui/addiu`) — `todo.md`, п.6.
+  (перенос в RX + правка `lui/addiu`) — `.opencode/todo.md`, п.6.
 - **`slot 182`** (список альбомов автора) уже матчит составляющую
   (`exp_albums_artist_album_artist.py`, строка `0x93fb00`) — работает для соавторов.

@@ -5,7 +5,7 @@ description: "Use when unpacking, patching, rebuilding or testing the Tempotec V
 
 # Модификация прошивки Tempotec V3 Analog
 
-Прошивка — ISO (`v3_analog.upt.txt`) с `SYSTEM.UBI` (корневая ФС) внутри. Оболочка
+Прошивка — ISO (`v3_analog.upt`) с `SYSTEM.UBI` (корневая ФС) внутри. Оболочка
 и медиатека — один бинарь `/usr/bin/hiby_player` (MIPS32 LE, stripped, SQLite
 внутри, SQL-запросы текстом в `.rodata`). Медиатека живёт в **отдельном разделе**
 `/data/usrlocal_media.db` и прошивкой не перезаписывается.
@@ -16,7 +16,7 @@ description: "Use when unpacking, patching, rebuilding or testing the Tempotec V
 ## Пайплайн
 
 ```
-./tools/make.sh unpack      # v3_analog.upt.txt -> fw/unpacked (ISO) + fw/SYSTEM (UBIFS)
+./tools/make.sh unpack      # v3_analog.upt -> fw/unpacked (ISO) + fw/SYSTEM (UBIFS)
 ./tools/make.sh patch       # правки бинаря: tools/patch_player.py + tools/patch_sql.py
 ./tools/make.sh build [имя] # overlay/ -> make_db_fix_sql -> dedupe дубликатов
                             #   -> chown 1004:1004 -> chmod 775 -> mkfs.ubifs
@@ -30,9 +30,12 @@ description: "Use when unpacking, patching, rebuilding or testing the Tempotec V
 `--check` цепочки, целостность образа, прогон вшитого SQL на копии БД
 (триггеры/склейки/буквы/integrity).
 
-Готовый образ — `out/<имя>` (по умолчанию `v3_analog_patched.upt`). Перед сборкой
-убедиться, что `fw/SYSTEM` распакован из нужного образа (после смены исходника —
-`unpack` заново).
+Готовый образ — `out/<имя>`; по умолчанию имя **`v3_analog.upt`** (т.е.
+`out/v3_analog.upt`). Другое имя: первый аргумент (`build|verify [имя]`) или
+переменная окружения `IMAGE=...`; исходник стока — `SRC=...` (по умолчанию
+`v3_analog.upt`). На SD-карту образ кладётся строго как `v3_analog.upt`. Перед
+сборкой убедиться, что `fw/SYSTEM` распакован из нужного образа (после смены
+исходника — `unpack` заново).
 
 **Грабли сборки:** `usr/bin/hiby_player` должен быть исполняемым (`775`) — иначе
 образ соберётся, но плеер не запустится (бутлуп на заставке). `make.sh build` и

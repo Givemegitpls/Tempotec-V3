@@ -4,6 +4,19 @@
 
 ## Рабочее состояние
 
+- **Имена прошивок унифицированы (2026-10-11):** сток в корне переименован
+  `v3_analog.upt.txt` → `v3_analog.upt` (суффикс был косметическим, файл —
+  ISO9660; в `v3_analog.zip` он и лежал как `v3_analog.upt`). Сборка по умолчанию
+  даёт `out/v3_analog.upt`; другое имя — первый аргумент `build_all.sh`/`make.sh`
+  или `IMAGE=...`; исходник — `SRC=...`. На SD-карту образ кладётся строго как
+  `v3_analog.upt`. Проверено: `make.sh audit` (сток `3a5db0fa…`), `make.sh build
+  v3_analog_test.upt`, `verify_build.py` — всё OK.
+
+- **Документация переехала в `.opencode/` (2026-10-11):** человекочитаемое описание
+  мода, установка и краткая сборка — в корневом `README.md`; `readme.md` (пайплайн
+  сборки + ручная распаковка), `CHANGELOG.md` (история версий) и этот `todo.md` —
+  здесь, рядом с `NOTES.md`.
+
 - **На карте плеера:** `v3_analog.upt` = наша сборка (`daff17c7…`, прошита
   2026-10-11); рядом `v3_analog_usbmode3.upt` (`c4dbbcdd…`), `v3_analog_clean.upt`
   (копия) и `v3_analog-old.upt` (= latest_nohier). Откат:
@@ -17,7 +30,7 @@
   ключу вида у Albums; починка позиционного запроса `album_artist`; прыжок для
   нераспознанного ключа тапа). **Проверено на устройстве (2026-10-11):** полоска
   и прыжки работают в «Исполнителе альбома» и «Albums» (включая `#`), Artists/All
-  целы, подсписки и Genres — без полоски. Детали — `.opencode/NOTES.md`.
+  целы, подсписки и Genres — без полоски. Детали — `NOTES.md`.
 - **Воспроизводимая сборка с нуля (2026-10-11):** `out/v3_analog_clean.upt`
   (ISO `daff17c7…`, UBI `6ff1d43d…`) — собрана `tools/build_all.sh` из чистого
   стока (unpack → `patch_player --album-level` → `patch_sql` → вся цепочка →
@@ -28,7 +41,7 @@
   отсутствуют (`vfs_cache_pressure=100`, `read_ahead=128`, `relatime`, нет
   `S90tune.sh`), UI работает. Логика идентична `86c28f7a…` (usbmode3): все 199
   SQL-слотов совпадают по содержимому, отличия — только размещение перенесённых
-  строк и «мёртвые» байты (см. `.opencode/NOTES.md`). Rootfs-твики (`S90tune.sh`,
+  строк и «мёртвые» байты (см. `NOTES.md`). Rootfs-твики (`S90tune.sh`,
   `sysctl`, `dac_to_store`) откачены: из `overlay/`, дерева и плеера убраны.
 - **Свежая сборка (назад на границе автора):** `out/v3_analog_albumstep6.upt`
   (UBI `f5a8a5e4…`, бинарь `ef105b98…`, ISO `d46ea907…`) — «первый альбом автора
@@ -55,7 +68,7 @@
   **Проверено на устройстве 2026-10-10.** Фиксы по ходу: WCPY-аргументы,
   `lg()` сохраняет `t2`; `rec+0x52c` = полный ключ (сборка патчит
   `exp_albums_artist_album_artist`); имя автора в ctx для album_artist = `ctx+0x1e`.
-  См. `docs/album-step.md`, `work/next_artist_reader_design.md`, `.opencode/NOTES.md`.
+  См. `docs/album-step.md`, `work/next_artist_reader_design.md`, `NOTES.md`.
   Предыдущая (альбом→альбом, проверена 2026-10-09):
   `out/v3_analog_albumstep.upt` (бинарь `fde1e6c2…`).
 - Предыдущая — `out/v3_analog_aa_toggle.upt` (`c77cc270…`).
@@ -91,7 +104,7 @@
    `/sbin/adbserver.sh` (иначе adbd не поднимался). Метка `<adb>` переименована
    «Dock»→**ADB** во всех языках (`tools/patch_usb_label.py`, в `make.sh build`).
    Сборка `out/v3_analog_usbmode3.upt` (бинарь `86c28f7a…`). Разбор —
-   `work/adb_usb_mode_design.md`, `.opencode/NOTES.md`. **Проверено:** режим ADB
+   `work/adb_usb_mode_design.md`, `NOTES.md`. **Проверено:** режим ADB
    сохранён (config 8); после перезагрузки с кабелем adb поднимается сам; карта
    остаётся у плеера. Маркер `enable_adb` и пасхалка About×10 не нужны.
    - Композит `mass_storage,adb` (карта и ПК, и adb) — отдельная ветка
@@ -117,7 +130,7 @@
    при «Обновлении медиатеки» не исполняется. Хук перенесён на `0x70ecfc`
    (`commit transaction` в пересборке `FUN_0070eb00`); `make.sh build` вшивает
    `usr/share/hiby_db_fix.sql`; `verify_build` проверяет SQL на копии БД. Сборка
-   `out/v3_analog_selfdb10.upt` (бинарь `4ad95aa1…`). Детали — `.opencode/NOTES.md`
+   `out/v3_analog_selfdb10.upt` (бинарь `4ad95aa1…`). Детали — `NOTES.md`
    (сессия 2026-10-10 прод.). **Проверено:** после прошивки + «Обновления
    медиатеки» триггер `split_ARTIST2_TABLE` стал новым (CTE), соавторы раздельны,
    сырых букв 0, integrity ok.
@@ -129,7 +142,7 @@
    **Теги исправлены** (скрипт `normalize_unicode.py` в скилле `music-tag-normalize`
    проекта `~/TempotecMusic`; библиотека и SD — NFC, dry-run = 0). **Осталось:**
    разово «Обновление медиатеки» на плеере, чтобы БД подхватила новые теги.
-   Детали — `.opencode/NOTES.md`, раздел «NFD-строки в тегах». Рендеры глифов —
+   Детали — `NOTES.md`, раздел «NFD-строки в тегах». Рендеры глифов —
    `/tmp/glyph_iy.png`, `/tmp/glyph_word.png`.
 
 ### Переключение между альбомами — СДЕЛАНО (альбом→альбом)

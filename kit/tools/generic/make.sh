@@ -2,21 +2,21 @@
 # Сборка/разборка прошивки Tempotec V3 Analog. Всё внутри docker-образа
 # tempotec-fw-tools (см. docker/Dockerfile), в систему ничего не ставится.
 #
-#   ./tools/make.sh unpack   # v3_analog.upt.txt -> fw/unpacked + fw/SYSTEM
+#   ./tools/make.sh unpack   # v3_analog.upt -> fw/unpacked + fw/SYSTEM
 #   ./tools/make.sh patch    # правки бинарей в fw/SYSTEM
 #   ./tools/make.sh build    # fw/SYSTEM -> SYSTEM.UBI -> md5 -> out/*.upt
 #   ./tools/make.sh verify   # распаковать собранный образ и сверить с fw/SYSTEM
 #   ./tools/make.sh all      # unpack + patch + build + verify
 #
-# Готовый образ: out/v3_analog_patched.upt
+# Готовый образ: out/v3_analog.upt (имя — первый аргумент build/verify или IMAGE=...)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FW=docker/fw.sh
-SRC=v3_analog.upt.txt
+SRC="${SRC:-v3_analog.upt}"
 UNPACKED=fw/unpacked
 TREE=fw/SYSTEM
-OUT="out/${2:-v3_analog_patched.upt}"
+OUT="out/${IMAGE:-${2:-v3_analog.upt}}"
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 

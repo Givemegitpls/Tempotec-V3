@@ -3,6 +3,10 @@
 #
 #   ./tools/build_all.sh [имя_образа.upt] [копия_базы_медиатеки.db]
 #
+# Имя образа по умолчанию — v3_analog.upt (готовый образ: out/v3_analog.upt).
+# Другое имя задаётся первым аргументом или переменной окружения IMAGE=...
+# (например: IMAGE=v3_analog_test.upt ./tools/build_all.sh).
+#
 # Всё, что попадает в образ, видно до сборки: ./tools/make.sh audit
 # (дифф fw/SYSTEM против свежераспакованного стока).
 #
@@ -12,8 +16,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BIN=fw/SYSTEM/usr/bin/hiby_player
-IMAGE="${1:-v3_analog_clean.upt}"
-DB="${2:-}"
+IMAGE="${IMAGE:-${1:-v3_analog.upt}}"
+DB="${DB:-${2:-}}"
 
 # Порядок важен и должен совпадать с tools/verify_build.py:CHAIN.
 CHAIN=(
@@ -36,7 +40,7 @@ CHAIN=(
   exp_usb_mode_adb
 )
 
-echo "== 1/5 распаковка стока (v3_analog.upt.txt -> fw/SYSTEM)"
+echo "== 1/5 распаковка стока (v3_analog.upt -> fw/SYSTEM)"
 ./tools/make.sh unpack
 
 echo "== 2/5 базовые патчи: patch_player --album-level + patch_sql"
