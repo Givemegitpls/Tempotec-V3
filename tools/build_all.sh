@@ -32,6 +32,7 @@ CHAIN=(
   exp_artist_tracks_component
   exp_db_autofix
   patch_artist_cleanup
+  exp_az_bar
   exp_usb_mode_adb
 )
 

@@ -33,7 +33,7 @@ CHAIN = [
     "exp_shuffle_linear", "exp_shuffle_guard", "exp_shuffle_hierarchy",
     "exp_artist_toggle", "exp_toggle_album_artist", "exp_all_sort",
     "exp_albums_artist_album_artist", "exp_artist_tracks_component", "exp_db_autofix",
-    "patch_artist_cleanup", "exp_usb_mode_adb",
+    "patch_artist_cleanup", "exp_az_bar", "exp_usb_mode_adb",
 ]
 BAD = ("неожиданн", "не найдено", "занято", "не влезает", "Traceback")
 

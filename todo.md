@@ -9,6 +9,15 @@
   (копия) и `v3_analog-old.upt` (= latest_nohier). Откат:
   `backup/hiby_player.usbmode3_86c28f7a.bin` (adb push + reboot) или
   `out/v3_analog_usbmode3.upt`.
+- **Воспроизводимая сборка с нуля (2026-10-11):** `out/v3_analog_azbar.upt`
+  (ISO `82c49b9d…`) — «полоска A–Z в Album Artist и Albums». Собрана
+  `tools/build_all.sh` из чистого стока; бинарь `a40297c3…` (побайтово совпал с
+  проверенным на устройстве), вшитый SQL `18e85574…`, все проверки OK.
+  Правка — `tools/exp_az_bar.py` (4 части: флаг полоски у Album Artist; флаг по
+  ключу вида у Albums; починка позиционного запроса `album_artist`; прыжок для
+  нераспознанного ключа тапа). **Проверено на устройстве (2026-10-11):** полоска
+  и прыжки работают в «Исполнителе альбома» и «Albums» (включая `#`), Artists/All
+  целы, подсписки и Genres — без полоски. Детали — `.opencode/NOTES.md`.
 - **Воспроизводимая сборка с нуля (2026-10-11):** `out/v3_analog_clean.upt`
   (ISO `daff17c7…`, UBI `6ff1d43d…`) — собрана `tools/build_all.sh` из чистого
   стока (unpack → `patch_player --album-level` → `patch_sql` → вся цепочка →
